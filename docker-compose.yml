@@ -1,11 +1,6 @@
 services:
   overlord-server:
-    # Build from source by default (for local development/testing)
-    build:
-      context: .
-      dockerfile: Dockerfile
-    # Optionally use pre-built image from registry (set DOCKER_IMAGE env var)
-    image: ${DOCKER_IMAGE:-overlord-server:local}
+    image: ${DOCKER_IMAGE:-ghcr.io/pulsarv2/overlord:latest}
     container_name: overlord-server
     ports:
       - "${PORT:-5173}:5173"
@@ -37,9 +32,6 @@ services:
       start_period: 40s
 
   agent-builder:
-    build:
-      context: .
-      dockerfile: docker/agent-builder.Dockerfile
     image: ghcr.io/pulsarv2/overlord/agent-builder:latest
     container_name: overlord-agent-builder
     profiles: ["builder"]

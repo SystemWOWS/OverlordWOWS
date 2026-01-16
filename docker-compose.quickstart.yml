@@ -1,6 +1,6 @@
 services:
   overlord-server:
-    image: ${DOCKER_IMAGE:-ghcr.io/yourusername/overlord-server:latest}
+    image: ghcr.io/pulsarv2/overlord:latest
     container_name: overlord-server
     ports:
       - "5173:5173"
@@ -32,10 +32,7 @@ services:
       start_period: 40s
 
   agent-builder:
-    build:
-      context: .
-      dockerfile: docker/agent-builder.Dockerfile
-    image: overlord/agent-builder:local
+    image: ghcr.io/pulsarv2/overlord/agent-builder:latest
     container_name: overlord-agent-builder
     profiles: ["builder"]
     environment:
