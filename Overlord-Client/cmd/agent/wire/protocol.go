@@ -49,6 +49,16 @@ type Frame struct {
 	Data   []byte      `msgpack:"data"`
 }
 
+type ScreenshotResult struct {
+	Type      string `msgpack:"type"`
+	CommandID string `msgpack:"commandId,omitempty"`
+	Format    string `msgpack:"format"`
+	Width     int    `msgpack:"width,omitempty"`
+	Height    int    `msgpack:"height,omitempty"`
+	Data      []byte `msgpack:"data"`
+	Error     string `msgpack:"error,omitempty"`
+}
+
 type ConsoleOutput struct {
 	Type      string `msgpack:"type"`
 	SessionID string `msgpack:"sessionId"`

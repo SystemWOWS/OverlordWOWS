@@ -47,6 +47,25 @@ db.run(`
   );
 `);
 
+db.run(`
+  CREATE TABLE IF NOT EXISTS notification_screenshots (
+    id TEXT PRIMARY KEY,
+    notification_id TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    format TEXT NOT NULL,
+    width INTEGER,
+    height INTEGER,
+    bytes BLOB NOT NULL
+  );
+`);
+db.run(
+  `CREATE INDEX IF NOT EXISTS idx_notification_screenshots_notification_id ON notification_screenshots(notification_id);`,
+);
+db.run(
+  `CREATE INDEX IF NOT EXISTS idx_notification_screenshots_ts ON notification_screenshots(ts DESC);`,
+);
+
 export function upsertClientRow(
   partial: Partial<ClientInfo> & {
     id: string;
@@ -247,4 +266,57 @@ export function deleteExpiredBuilds() {
 
 export function deleteBuild(id: string) {
   db.run(`DELETE FROM builds WHERE id = ?`, id);
+}
+
+export interface NotificationScreenshotRecord {
+  id: string;
+  notificationId: string;
+  clientId: string;
+  ts: number;
+  format: string;
+  width?: number;
+  height?: number;
+  bytes: Uint8Array;
+}
+
+export function saveNotificationScreenshot(record: NotificationScreenshotRecord) {
+  db.run(
+    `INSERT OR REPLACE INTO notification_screenshots
+      (id, notification_id, client_id, ts, format, width, height, bytes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ,
+    record.id,
+    record.notificationId,
+    record.clientId,
+    record.ts,
+    record.format,
+    record.width ?? null,
+    record.height ?? null,
+    record.bytes,
+  );
+}
+
+export function getNotificationScreenshot(notificationId: string): NotificationScreenshotRecord | null {
+  const row = db
+    .query<any>(
+      `SELECT * FROM notification_screenshots WHERE notification_id = ? ORDER BY ts DESC LIMIT 1`,
+    )
+    .get(notificationId);
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    notificationId: row.notification_id,
+    clientId: row.client_id,
+    ts: row.ts,
+    format: row.format,
+    width: row.width ?? undefined,
+    height: row.height ?? undefined,
+    bytes: row.bytes,
+  };
+}
+
+export function clearNotificationScreenshots() {
+  db.run(`DELETE FROM notification_screenshots`);
+  console.log("[db] cleared notification screenshots");
 }

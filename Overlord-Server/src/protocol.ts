@@ -7,6 +7,7 @@ export type MessageKind =
   | "pong"
   | "command"
   | "command_result"
+  | "screenshot_result"
   | "frame"
   | "status"
   | "plugin_event"
@@ -43,6 +44,7 @@ export type CommandType =
   | "remote_stop"
   | "disconnect"
   | "reconnect"
+  | "screenshot"
   | "ping"
   | "console_start"
   | "console_input"
@@ -81,6 +83,16 @@ export type CommandResult = {
   commandId?: string;
   ok: boolean;
   message?: string;
+};
+
+export type ScreenshotResult = {
+  type: "screenshot_result";
+  commandId?: string;
+  format: "jpeg" | "webp" | "png" | string;
+  width?: number;
+  height?: number;
+  data: Uint8Array;
+  error?: string;
 };
 
 export type FrameHeader = {
@@ -234,6 +246,7 @@ export type WireMessage =
   | Pong
   | Command
   | CommandResult
+  | ScreenshotResult
   | Frame
   | Status
   | ConsoleOutput

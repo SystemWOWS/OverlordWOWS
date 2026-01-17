@@ -80,6 +80,20 @@ func HandleScreenshot(ctx context.Context, env *runtime.Env, cmdID string) error
 	jpegData := buf.Bytes()
 	log.Printf("screenshot: captured %dx%d, encoded %d bytes", bounds.Dx(), bounds.Dy(), len(jpegData))
 
+	screenshotResult := wire.ScreenshotResult{
+		Type:      "screenshot_result",
+		CommandID: cmdID,
+		Format:    "jpeg",
+		Width:     bounds.Dx(),
+		Height:    bounds.Dy(),
+		Data:      jpegData,
+	}
+
+	if err := wire.WriteMsg(ctx, env.Conn, screenshotResult); err != nil {
+		log.Printf("screenshot: failed to send screenshot result: %v", err)
+		return err
+	}
+
 	frame := wire.Frame{
 		Type: "frame",
 		Header: wire.FrameHeader{

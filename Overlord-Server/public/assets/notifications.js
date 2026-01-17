@@ -19,9 +19,10 @@ const telegramEnabledInput = document.getElementById("telegram-enabled");
 const telegramBotTokenInput = document.getElementById("telegram-bot-token");
 const telegramChatIdInput = document.getElementById("telegram-chat-id");
 const saveTelegramBtn = document.getElementById("save-telegram");
-const panelToggle = document.getElementById("notification-panel-toggle");
 const panel = document.getElementById("notification-panel");
-const panelClose = document.getElementById("notification-panel-close");
+const previewModal = document.getElementById("notification-preview-modal");
+const previewModalImg = document.getElementById("notification-preview-image");
+const previewModalClose = document.getElementById("notification-preview-close");
 
 const MAX_ROWS = 200;
 
@@ -59,7 +60,77 @@ function renderRow(item, prepend = true) {
     <td class="py-2 pr-4 max-w-xl truncate" title="${item.title || ""}">${item.title || ""}</td>
     <td class="py-2 pr-4 whitespace-nowrap">${item.process || "-"}</td>
     <td class="py-2 pr-4 whitespace-nowrap">${item.keyword || "-"}</td>
+    <td class="py-2 pr-4"><div class="preview-slot"></div></td>
   `;
+
+  const preview = row.querySelector(".preview-slot");
+  if (preview) {
+    const notificationId = item?.id || "";
+    if (!notificationId) {
+      preview.textContent = "-";
+      preview.className = "text-slate-500";
+    } else {
+      preview.textContent = "Loading...";
+      preview.className = "text-slate-500";
+      const img = document.createElement("img");
+      img.className = "max-h-32 w-auto rounded border border-slate-800/80 cursor-zoom-in";
+      img.loading = "lazy";
+      img.alt = "Notification screenshot";
+
+      let attempts = 0;
+      const maxAttempts = 5;
+      const fetchPreview = async () => {
+        attempts += 1;
+        try {
+          const url = `/api/notifications/${encodeURIComponent(notificationId)}/screenshot?ts=${Date.now()}`;
+          const res = await fetch(url, { cache: "no-store" });
+          if (!res.ok) {
+            if (res.status === 404 && attempts < maxAttempts) {
+              setTimeout(fetchPreview, 1000 * attempts);
+              return;
+            }
+            preview.textContent = "-";
+            preview.className = "text-slate-500";
+            return;
+          }
+          const blob = await res.blob();
+          const objectUrl = URL.createObjectURL(blob);
+          img.classList.add("opacity-0");
+          preview.innerHTML = "";
+          preview.className = "";
+          preview.appendChild(img);
+          img.addEventListener("load", () => {
+            img.classList.remove("opacity-0");
+          });
+          img.addEventListener("error", () => {
+            preview.textContent = "-";
+            preview.className = "text-slate-500";
+            URL.revokeObjectURL(objectUrl);
+          });
+          img.src = objectUrl;
+          img.dataset.previewUrl = objectUrl;
+          if (img.decode) {
+            img.decode().catch(() => {});
+          }
+
+          img.addEventListener("click", () => {
+            if (!previewModal || !previewModalImg) return;
+            previewModalImg.src = img.dataset.previewUrl || objectUrl;
+            previewModal.classList.remove("hidden");
+            previewModal.classList.add("flex");
+          });
+        } catch (err) {
+          if (attempts < maxAttempts) {
+            setTimeout(fetchPreview, 1000 * attempts);
+            return;
+          }
+          preview.textContent = "-";
+          preview.className = "text-slate-500";
+        }
+      };
+      fetchPreview();
+    }
+  }
 
   if (prepend) {
     listEl.prepend(row);
@@ -210,6 +281,9 @@ function wireTelegramSave() {
 
 function connect() {
   startNotificationClient();
+  if (panel) {
+    markAllNotificationsRead();
+  }
   subscribeStatus((status) => {
     if (status === "connected") setStatus("Connected", "ok");
     if (status === "error") setStatus("Error", "error");
@@ -221,28 +295,38 @@ function connect() {
     if (emptyState) {
       emptyState.classList.toggle("hidden", history.length > 0);
     }
+    markAllNotificationsRead();
   });
   subscribeNotifications(handleNotification);
-}
-
-function wirePanelToggle() {
-  if (!panel || !panelToggle || !panelClose) return;
-  const openPanel = () => {
-    panel.classList.remove("hidden");
-    panelToggle.classList.add("hidden");
-    markAllNotificationsRead();
-  };
-  const closePanel = () => {
-    panel.classList.add("hidden");
-    panelToggle.classList.remove("hidden");
-  };
-  panelToggle.addEventListener("click", openPanel);
-  panelClose.addEventListener("click", closePanel);
 }
 
 wireKeywordSave();
 wireWebhookSave();
 wireTelegramSave();
 loadKeywords();
-wirePanelToggle();
 connect();
+
+function wireActiveClear() {
+  const clearIfActive = () => {
+    if (document.visibilityState === "visible") {
+      markAllNotificationsRead();
+    }
+  };
+  document.addEventListener("visibilitychange", clearIfActive);
+  window.addEventListener("focus", clearIfActive);
+  clearIfActive();
+}
+
+wireActiveClear();
+
+if (previewModal && previewModalClose && previewModalImg) {
+  const closePreview = () => {
+    previewModal.classList.add("hidden");
+    previewModal.classList.remove("flex");
+    previewModalImg.src = "";
+  };
+  previewModalClose.addEventListener("click", closePreview);
+  previewModal.addEventListener("click", (event) => {
+    if (event.target === previewModal) closePreview();
+  });
+}
