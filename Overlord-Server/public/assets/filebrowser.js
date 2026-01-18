@@ -9,6 +9,7 @@ let fileDownloads = new Map();
 let fileUploads = new Map();
 let activeTransfers = new Map();
 let currentEditingFile = null;
+let lastSuccessfulResponse = 0;
 
 const statusEl = document.getElementById("status-indicator");
 const breadcrumbEl = document.getElementById("breadcrumb");
@@ -140,8 +141,11 @@ function handleMessage(msg) {
     case "status":
       console.log("[DEBUG] Status message:", msg);
       if (msg.status === "offline") {
-        updateStatus("error", "Client Offline");
-        enableControls(false);
+        const recentlyActive = Date.now() - lastSuccessfulResponse < 10_000;
+        if (!recentlyActive) {
+          updateStatus("error", "Client Offline");
+          enableControls(false);
+        }
       }
       break;
     case "file_list_result":
@@ -248,6 +252,10 @@ function handleFileList(msg) {
     fileListEl.innerHTML = `<div class="px-4 py-6 text-center text-red-400"><i class="fa-solid fa-exclamation-triangle mr-2"></i>${escapeHtml(msg.error)}</div>`;
     return;
   }
+
+  lastSuccessfulResponse = Date.now();
+  updateStatus("connected", "Connected");
+  enableControls(true);
 
   currentPath = msg.path;
   const entries = msg.entries || [];
@@ -889,9 +897,9 @@ function addTransferToUI(transfer) {
     <div class="flex items-center justify-between mb-2">
       <div class="flex items-center gap-2 flex-1 min-w-0">
         <i class="fa-solid ${icon} ${color}"></i>
-        <span class="text-sm truncate">${transfer.fileName}</span>
+        <span class="text-sm truncate transfer-name"></span>
       </div>
-      <button class="cancel-btn text-red-400 hover:text-red-300 px-2" onclick="cancelTransfer('${transfer.id}')">
+      <button class="cancel-btn text-red-400 hover:text-red-300 px-2" type="button">
         <i class="fa-solid fa-xmark"></i>
       </button>
     </div>
@@ -903,6 +911,15 @@ function addTransferToUI(transfer) {
       <span class="size-text">${formatBytes(transfer.sent || transfer.received || 0)} / ${formatBytes(transfer.total)}</span>
     </div>
   `;
+
+  const nameEl = transferItem.querySelector(".transfer-name");
+  if (nameEl) {
+    nameEl.textContent = transfer.fileName;
+  }
+  const cancelBtn = transferItem.querySelector(".cancel-btn");
+  if (cancelBtn) {
+    cancelBtn.addEventListener("click", () => cancelTransfer(transfer.id));
+  }
 
   transferList.appendChild(transferItem);
   transferPanel.classList.remove("hidden");

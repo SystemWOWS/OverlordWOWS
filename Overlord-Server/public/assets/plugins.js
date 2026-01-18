@@ -25,7 +25,11 @@ async function checkAuth() {
         operator: '<i class="fa-solid fa-sliders mr-1"></i>Operator',
         viewer: '<i class="fa-solid fa-eye mr-1"></i>Viewer',
       };
-      roleBadge.innerHTML = roleBadges[data.role] || data.role;
+      if (roleBadges[data.role]) {
+        roleBadge.innerHTML = roleBadges[data.role];
+      } else {
+        roleBadge.textContent = data.role || "";
+      }
 
       if (data.role === "admin") {
         roleBadge.classList.add(
@@ -96,10 +100,14 @@ function renderPlugins(plugins) {
     card.className =
       "rounded-xl border border-slate-800 bg-slate-950/50 px-4 py-3 flex items-center justify-between";
     const meta = document.createElement("div");
-    meta.innerHTML = `
-      <div class="font-semibold">${plugin.name || plugin.id}</div>
-      <div class="text-sm text-slate-400">${plugin.id}${plugin.version ? ` • v${plugin.version}` : ""}</div>
-    `;
+    const title = document.createElement("div");
+    title.className = "font-semibold";
+    title.textContent = plugin.name || plugin.id;
+    const subtitle = document.createElement("div");
+    subtitle.className = "text-sm text-slate-400";
+    subtitle.textContent = `${plugin.id}${plugin.version ? ` • v${plugin.version}` : ""}`;
+    meta.appendChild(title);
+    meta.appendChild(subtitle);
     const actions = document.createElement("div");
     actions.className = "flex items-center gap-2";
 

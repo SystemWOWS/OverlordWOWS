@@ -49,17 +49,23 @@ function formatTime(ts) {
   }
 }
 
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text == null ? "" : String(text);
+  return div.innerHTML;
+}
+
 function renderRow(item, prepend = true) {
   if (!listEl) return;
   const row = document.createElement("tr");
   row.className = "border-t border-slate-800/60";
   row.innerHTML = `
     <td class="py-2 pr-4 whitespace-nowrap text-slate-400">${formatTime(item.ts)}</td>
-    <td class="py-2 pr-4 whitespace-nowrap">${item.clientId || "-"}</td>
-    <td class="py-2 pr-4 whitespace-nowrap">${item.user || "-"}</td>
-    <td class="py-2 pr-4 max-w-xl truncate" title="${item.title || ""}">${item.title || ""}</td>
-    <td class="py-2 pr-4 whitespace-nowrap">${item.process || "-"}</td>
-    <td class="py-2 pr-4 whitespace-nowrap">${item.keyword || "-"}</td>
+    <td class="py-2 pr-4 whitespace-nowrap">${escapeHtml(item.clientId || "-")}</td>
+    <td class="py-2 pr-4 whitespace-nowrap">${escapeHtml(item.user || "-")}</td>
+    <td class="py-2 pr-4 max-w-xl truncate" title="${escapeHtml(item.title || "")}">${escapeHtml(item.title || "-")}</td>
+    <td class="py-2 pr-4 whitespace-nowrap">${escapeHtml(item.process || "-")}</td>
+    <td class="py-2 pr-4 whitespace-nowrap">${escapeHtml(item.keyword || "-")}</td>
     <td class="py-2 pr-4"><div class="preview-slot"></div></td>
   `;
 

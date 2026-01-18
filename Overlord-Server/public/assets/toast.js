@@ -42,8 +42,13 @@ function showToast(message, type = "info", duration = 4000) {
         <i class="fa-solid fa-xmark"></i>
       </button>
     </div>
-    <div class="toast-message">${message}</div>
+    <div class="toast-message"></div>
   `;
+
+  const messageEl = toast.querySelector(".toast-message");
+  if (messageEl) {
+    messageEl.textContent = message;
+  }
 
   const closeBtn = toast.querySelector(".toast-close");
   if (closeBtn) {

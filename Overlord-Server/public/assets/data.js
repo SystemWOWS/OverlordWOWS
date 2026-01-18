@@ -73,11 +73,18 @@ function updateOsFilter(items) {
   const currentValue = osSelect.value;
   const osArray = Array.from(osList).sort();
 
-  const options =
-    '<option value="all">All OS</option>' +
-    osArray.map((os) => `<option value="${os}">${os}</option>`).join("");
+  osSelect.innerHTML = "";
+  const allOption = document.createElement("option");
+  allOption.value = "all";
+  allOption.textContent = "All OS";
+  osSelect.appendChild(allOption);
 
-  osSelect.innerHTML = options;
+  osArray.forEach((os) => {
+    const option = document.createElement("option");
+    option.value = os;
+    option.textContent = os;
+    osSelect.appendChild(option);
+  });
 
   if (currentValue !== "all" && osList.has(currentValue)) {
     osSelect.value = currentValue;

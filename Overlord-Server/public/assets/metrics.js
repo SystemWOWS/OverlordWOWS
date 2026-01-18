@@ -84,6 +84,12 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }
 
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text == null ? "" : String(text);
+  return div.innerHTML;
+}
+
 function formatDuration(ms) {
   const seconds = Math.floor(ms / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -202,7 +208,7 @@ function updateMetrics(data) {
       .map(
         ([os, count]) => `
         <div class="flex justify-between items-center">
-          <span class="text-slate-400">${os}</span>
+          <span class="text-slate-400">${escapeHtml(os)}</span>
           <span class="font-semibold">${count}</span>
         </div>
       `,
@@ -222,7 +228,7 @@ function updateMetrics(data) {
       .map(
         ([type, count]) => `
       <div class="bg-slate-800/50 rounded p-3">
-        <div class="text-xs text-slate-400 mb-1">${type}</div>
+        <div class="text-xs text-slate-400 mb-1">${escapeHtml(type)}</div>
         <div class="text-xl font-bold">${count.toLocaleString()}</div>
       </div>
     `,
@@ -309,7 +315,11 @@ async function checkAuth() {
       operator: '<i class="fa-solid fa-sliders mr-1"></i>Operator',
       viewer: '<i class="fa-solid fa-eye mr-1"></i>Viewer',
     };
-    roleBadge.innerHTML = roleBadges[data.role] || data.role;
+    if (roleBadges[data.role]) {
+      roleBadge.innerHTML = roleBadges[data.role];
+    } else {
+      roleBadge.textContent = data.role || "";
+    }
 
     if (data.role === "admin") {
       roleBadge.classList.add(

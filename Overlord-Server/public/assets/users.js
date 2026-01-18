@@ -26,8 +26,11 @@ async function getCurrentUser() {
         operator: '<i class="fa-solid fa-sliders mr-1"></i>Operator',
         viewer: '<i class="fa-solid fa-eye mr-1"></i>Viewer',
       };
-      currentRoleEl.innerHTML =
-        roleBadges[currentUser.role] || currentUser.role;
+      if (roleBadges[currentUser.role]) {
+        currentRoleEl.innerHTML = roleBadges[currentUser.role];
+      } else {
+        currentRoleEl.textContent = currentUser.role || "";
+      }
 
       if (currentUser.role === "admin") {
         currentRoleEl.classList.add(
@@ -175,7 +178,7 @@ function renderUsers() {
               data-action="change-role"
               data-user-id="${user.id}"
               data-username="${escapeHtml(user.username)}"
-              data-role="${user.role}"
+              data-role="${escapeHtml(user.role)}"
               title="Change Role"
             >
               <i class="fa-solid fa-user-tag"></i>
@@ -211,7 +214,7 @@ function getRoleBadge(role) {
     viewer:
       '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-700/50 text-slate-300 border border-slate-600"><i class="fa-solid fa-eye mr-1"></i>Viewer</span>',
   };
-  return badges[role] || role;
+  return badges[role] || escapeHtml(role || "");
 }
 
 function attachActionListeners() {

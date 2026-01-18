@@ -228,7 +228,11 @@ if (host) {
         operator: '<i class="fa-solid fa-sliders mr-1"></i>Operator',
         viewer: '<i class="fa-solid fa-eye mr-1"></i>Viewer',
       };
-      roleBadge.innerHTML = roleBadges[user.role] || user.role || "user";
+      if (roleBadges[user.role]) {
+        roleBadge.innerHTML = roleBadges[user.role];
+      } else {
+        roleBadge.textContent = user.role || "user";
+      }
       roleBadge.classList.remove(
         "bg-purple-900/50",
         "text-purple-300",

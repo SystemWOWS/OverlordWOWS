@@ -65,7 +65,11 @@ async function loadCurrentUser() {
           operator: '<i class="fa-solid fa-sliders mr-1"></i>Operator',
           viewer: '<i class="fa-solid fa-eye mr-1"></i>Viewer',
         };
-        roleBadge.innerHTML = roleBadges[currentUser.role] || currentUser.role;
+        if (roleBadges[currentUser.role]) {
+          roleBadge.innerHTML = roleBadges[currentUser.role];
+        } else {
+          roleBadge.textContent = currentUser.role || "";
+        }
 
         if (currentUser.role === "admin") {
           roleBadge.classList.add(
@@ -150,7 +154,10 @@ async function loadPluginsForClient(clientId) {
         btn.title = `Last error: ${plugin.lastError}`;
       }
       const label = document.createElement("span");
-      label.innerHTML = `<i class=\"fa-solid fa-puzzle-piece\"></i> ${plugin.name || plugin.id}`;
+      const labelIcon = document.createElement("i");
+      labelIcon.className = "fa-solid fa-puzzle-piece";
+      label.appendChild(labelIcon);
+      label.append(` ${plugin.name || plugin.id}`);
       const badge = document.createElement("span");
       badge.className =
         "text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border" +
@@ -167,7 +174,12 @@ async function loadPluginsForClient(clientId) {
         unloadBtn.className =
           "w-full text-left px-3 py-2 rounded-lg border border-red-800 bg-red-900/30 hover:bg-red-800/60 text-red-100 flex items-center gap-2";
         unloadBtn.dataset.pluginUnload = plugin.id;
-        unloadBtn.innerHTML = `<i class=\"fa-solid fa-plug-circle-xmark\"></i> Unload ${plugin.name || plugin.id}`;
+        const unloadIcon = document.createElement("i");
+        unloadIcon.className = "fa-solid fa-plug-circle-xmark";
+        const unloadText = document.createElement("span");
+        unloadText.textContent = `Unload ${plugin.name || plugin.id}`;
+        unloadBtn.appendChild(unloadIcon);
+        unloadBtn.appendChild(unloadText);
         container.appendChild(unloadBtn);
       }
     }

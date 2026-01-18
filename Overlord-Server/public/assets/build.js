@@ -62,7 +62,11 @@ async function init() {
       operator: '<i class="fa-solid fa-sliders mr-1"></i>Operator',
       viewer: '<i class="fa-solid fa-eye mr-1"></i>Viewer',
     };
-    roleBadge.innerHTML = roleBadges[data.role] || data.role;
+    if (roleBadges[data.role]) {
+      roleBadge.innerHTML = roleBadges[data.role];
+    } else {
+      roleBadge.textContent = data.role || "";
+    }
 
     if (data.role === "admin") {
       roleBadge.classList.add(
@@ -331,20 +335,41 @@ function showBuildFiles(files, buildId, expiresAt) {
   const buildInfoDiv = document.createElement("div");
   buildInfoDiv.className =
     "mb-3 p-3 bg-slate-900/70 border border-slate-700 rounded-lg";
-  buildInfoDiv.innerHTML = `
-    <div class="flex items-center justify-between gap-2 text-sm">
-      <div class="flex items-center gap-2">
-        <i class="fa-solid fa-fingerprint text-slate-400"></i>
-        <span class="text-slate-300">Build ID:</span>
-        <code class="text-blue-400 font-mono">${buildId}</code>
-      </div>
-      <div class="flex items-center gap-2">
-        <i class="fa-solid fa-clock text-slate-400"></i>
-        <span class="text-slate-300">Expires in:</span>
-        <span id="expiration-timer" class="text-yellow-400 font-medium" data-expires="${expiresAt}">Calculating...</span>
-      </div>
-    </div>
-  `;
+  const infoRow = document.createElement("div");
+  infoRow.className = "flex items-center justify-between gap-2 text-sm";
+  const left = document.createElement("div");
+  left.className = "flex items-center gap-2";
+  const idIcon = document.createElement("i");
+  idIcon.className = "fa-solid fa-fingerprint text-slate-400";
+  const idLabel = document.createElement("span");
+  idLabel.className = "text-slate-300";
+  idLabel.textContent = "Build ID:";
+  const idCode = document.createElement("code");
+  idCode.className = "text-blue-400 font-mono";
+  idCode.textContent = buildId;
+  left.appendChild(idIcon);
+  left.appendChild(idLabel);
+  left.appendChild(idCode);
+
+  const right = document.createElement("div");
+  right.className = "flex items-center gap-2";
+  const clockIcon = document.createElement("i");
+  clockIcon.className = "fa-solid fa-clock text-slate-400";
+  const expiresLabel = document.createElement("span");
+  expiresLabel.className = "text-slate-300";
+  expiresLabel.textContent = "Expires in:";
+  const timer = document.createElement("span");
+  timer.id = "expiration-timer";
+  timer.className = "text-yellow-400 font-medium";
+  timer.dataset.expires = String(expiresAt);
+  timer.textContent = "Calculating...";
+  right.appendChild(clockIcon);
+  right.appendChild(expiresLabel);
+  right.appendChild(timer);
+
+  infoRow.appendChild(left);
+  infoRow.appendChild(right);
+  buildInfoDiv.appendChild(infoRow);
   buildFilesDiv.appendChild(buildInfoDiv);
 
   updateExpirationTimer();
@@ -357,14 +382,20 @@ function showBuildFiles(files, buildId, expiresAt) {
 
     const fileInfo = document.createElement("div");
     fileInfo.className = "flex items-center gap-2";
-    fileInfo.innerHTML = `
-      <i class="fa-solid fa-file-code text-blue-400"></i>
-      <span class="font-medium">${file.name}</span>
-      <span class="text-xs text-slate-500">${formatFileSize(file.size)}</span>
-    `;
+    const fileIcon = document.createElement("i");
+    fileIcon.className = "fa-solid fa-file-code text-blue-400";
+    const fileName = document.createElement("span");
+    fileName.className = "font-medium";
+    fileName.textContent = file.name;
+    const fileSize = document.createElement("span");
+    fileSize.className = "text-xs text-slate-500";
+    fileSize.textContent = formatFileSize(file.size);
+    fileInfo.appendChild(fileIcon);
+    fileInfo.appendChild(fileName);
+    fileInfo.appendChild(fileSize);
 
     const downloadBtn = document.createElement("a");
-    downloadBtn.href = `/api/build/download/${file.name}`;
+    downloadBtn.href = `/api/build/download/${encodeURIComponent(file.name)}`;
     downloadBtn.className =
       "inline-flex items-center gap-1 px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm transition-colors";
     downloadBtn.innerHTML = '<i class="fa-solid fa-download"></i> Download';
@@ -559,31 +590,64 @@ function displayBuild(build) {
   buildContainer.className =
     "build-result-item mb-6 pb-6 border-b border-gray-700 last:border-b-0";
   buildContainer.id = `build-${build.id}`;
-  buildContainer.innerHTML = `
-    <div class="flex items-center justify-between mb-3">
-      <div class="flex items-center gap-3">
-        <i class="fa-solid fa-box text-blue-400"></i>
-        <span class="text-gray-300 font-medium">Build ID: ${build.id.substring(0, 8)}</span>
-        <span class="text-gray-500">•</span>
-        <span class="text-sm text-gray-400">${new Date(build.startTime).toLocaleString()}</span>
-      </div>
-      <div class="flex items-center gap-3">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-clock text-gray-400"></i>
-          <span id="timer-${build.id}" class="text-gray-300 font-medium">Loading...</span>
-        </div>
-        <button
-          id="delete-btn-${build.id}"
-          class="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors flex items-center gap-2 text-sm"
-          title="Delete build"
-        >
-          <i class="fa-solid fa-trash"></i>
-          <span>Delete</span>
-        </button>
-      </div>
-    </div>
-    <div id="files-${build.id}" class="space-y-2"></div>
-  `;
+  const header = document.createElement("div");
+  header.className = "flex items-center justify-between mb-3";
+
+  const left = document.createElement("div");
+  left.className = "flex items-center gap-3";
+  const boxIcon = document.createElement("i");
+  boxIcon.className = "fa-solid fa-box text-blue-400";
+  const buildLabel = document.createElement("span");
+  buildLabel.className = "text-gray-300 font-medium";
+  buildLabel.textContent = `Build ID: ${build.id.substring(0, 8)}`;
+  const sep = document.createElement("span");
+  sep.className = "text-gray-500";
+  sep.textContent = "•";
+  const startedAt = document.createElement("span");
+  startedAt.className = "text-sm text-gray-400";
+  startedAt.textContent = new Date(build.startTime).toLocaleString();
+  left.appendChild(boxIcon);
+  left.appendChild(buildLabel);
+  left.appendChild(sep);
+  left.appendChild(startedAt);
+
+  const right = document.createElement("div");
+  right.className = "flex items-center gap-3";
+  const timerWrap = document.createElement("div");
+  timerWrap.className = "flex items-center gap-2";
+  const clockIcon = document.createElement("i");
+  clockIcon.className = "fa-solid fa-clock text-gray-400";
+  const timer = document.createElement("span");
+  timer.id = `timer-${build.id}`;
+  timer.className = "text-gray-300 font-medium";
+  timer.textContent = "Loading...";
+  timerWrap.appendChild(clockIcon);
+  timerWrap.appendChild(timer);
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.id = `delete-btn-${build.id}`;
+  deleteBtn.className =
+    "px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors flex items-center gap-2 text-sm";
+  deleteBtn.title = "Delete build";
+  const deleteIcon = document.createElement("i");
+  deleteIcon.className = "fa-solid fa-trash";
+  const deleteText = document.createElement("span");
+  deleteText.textContent = "Delete";
+  deleteBtn.appendChild(deleteIcon);
+  deleteBtn.appendChild(deleteText);
+
+  right.appendChild(timerWrap);
+  right.appendChild(deleteBtn);
+
+  header.appendChild(left);
+  header.appendChild(right);
+
+  const filesContainer = document.createElement("div");
+  filesContainer.id = `files-${build.id}`;
+  filesContainer.className = "space-y-2";
+
+  buildContainer.appendChild(header);
+  buildContainer.appendChild(filesContainer);
 
   buildFilesDiv.appendChild(buildContainer);
 
@@ -606,23 +670,36 @@ function showBuildFilesForContainer(build, containerId, timerId) {
     fileDiv.className =
       "flex items-center justify-between bg-gray-700/50 p-4 rounded-lg hover:bg-gray-700 transition-colors";
 
-    fileDiv.innerHTML = `
-      <div class="flex items-center gap-3">
-        <i class="fa-solid fa-file text-blue-400"></i>
-        <div>
-          <div class="text-white font-medium">${file.filename}</div>
-          <div class="text-sm text-gray-400">${file.platform}</div>
-        </div>
-      </div>
-      <a
-        href="/api/build/download/${encodeURIComponent(file.filename)}"
-        download
-        class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center gap-2"
-      >
-        <i class="fa-solid fa-download"></i>
-        <span>Download</span>
-      </a>
-    `;
+    const fileMeta = document.createElement("div");
+    fileMeta.className = "flex items-center gap-3";
+    const fileIcon = document.createElement("i");
+    fileIcon.className = "fa-solid fa-file text-blue-400";
+    const fileText = document.createElement("div");
+    const fileName = document.createElement("div");
+    fileName.className = "text-white font-medium";
+    fileName.textContent = file.filename;
+    const filePlatform = document.createElement("div");
+    filePlatform.className = "text-sm text-gray-400";
+    filePlatform.textContent = file.platform;
+    fileText.appendChild(fileName);
+    fileText.appendChild(filePlatform);
+    fileMeta.appendChild(fileIcon);
+    fileMeta.appendChild(fileText);
+
+    const download = document.createElement("a");
+    download.href = `/api/build/download/${encodeURIComponent(file.filename)}`;
+    download.download = "";
+    download.className =
+      "px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center gap-2";
+    const downloadIcon = document.createElement("i");
+    downloadIcon.className = "fa-solid fa-download";
+    const downloadText = document.createElement("span");
+    downloadText.textContent = "Download";
+    download.appendChild(downloadIcon);
+    download.appendChild(downloadText);
+
+    fileDiv.appendChild(fileMeta);
+    fileDiv.appendChild(download);
 
     container.appendChild(fileDiv);
   });

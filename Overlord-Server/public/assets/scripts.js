@@ -31,7 +31,11 @@ async function checkAuth() {
       operator: '<i class="fa-solid fa-sliders mr-1"></i>Operator',
       viewer: '<i class="fa-solid fa-eye mr-1"></i>Viewer',
     };
-    roleBadge.innerHTML = roleBadges[data.role] || data.role;
+    if (roleBadges[data.role]) {
+      roleBadge.innerHTML = roleBadges[data.role];
+    } else {
+      roleBadge.textContent = data.role || "";
+    }
 
     if (data.role === "admin") {
       roleBadge.classList.add(
@@ -97,7 +101,7 @@ async function loadClients() {
     osFilter.innerHTML = '<option value="all">All OS (' + allClients.length + ')</option>' +
       Array.from(osList).sort().map(os => {
         const count = allClients.filter(c => (c.os || "unknown") === os).length;
-        return `<option value="${os}">${os} (${count})</option>`;
+        return `<option value="${escapeHtml(os)}">${escapeHtml(os)} (${count})</option>`;
       }).join("");
 
     filterAndRenderClients();
@@ -143,7 +147,7 @@ function renderClients() {
         <div class="flex-1 min-w-0">
           <div class="font-semibold text-slate-100 truncate">${escapeHtml(name)}</div>
           <div class="text-sm text-slate-400 flex items-center gap-2">
-            <span>${os}</span>
+            <span>${escapeHtml(os)}</span>
             ${c.user ? `<span class="text-slate-500">• ${escapeHtml(c.user)}</span>` : ''}
             <span class="text-slate-600">• ${c.id.substring(0, 8)}</span>
           </div>
