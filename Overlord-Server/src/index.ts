@@ -1241,6 +1241,19 @@ function handleRemoteDesktopViewerOpen(ws: ServerWebSocket<SocketData>) {
     safeSendViewer(ws, { type: "status", status: "offline", reason: "Client is offline", sessionId });
     return;
   }
+  safeSendViewer(ws, { type: "status", status: "connecting", sessionId });
+}
+
+function notifyRemoteDesktopStatus(clientId: string, status: string, reason?: string) {
+  for (const session of sessionManager.getAllRdSessions().values()) {
+    if (session.clientId !== clientId) continue;
+    safeSendViewer(session.viewer, {
+      type: "status",
+      status,
+      reason,
+      sessionId: session.id,
+    });
+  }
 }
 function handleRemoteDesktopViewerMessage(ws: ServerWebSocket<SocketData>, raw: string | ArrayBuffer | Uint8Array) {
   const payload = decodeViewerPayload(raw);
@@ -3848,6 +3861,9 @@ async function startServer() {
             },
           })
         );
+        if (role === "client") {
+          notifyRemoteDesktopStatus(id, "online");
+        }
         
         
         if (role === "client") {
@@ -4042,6 +4058,7 @@ async function startServer() {
         
         
         if (role === "client") {
+          notifyRemoteDesktopStatus(clientId, "offline", "Client disconnected");
           metrics.recordDisconnection();
         }
       },

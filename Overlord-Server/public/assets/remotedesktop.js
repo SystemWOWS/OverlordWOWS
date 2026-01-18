@@ -31,11 +31,18 @@ import { encodeMsgpack, decodeMsgpack } from "./msgpack-helpers.js";
   const ctx = canvas.getContext("2d");
   const agentFps = document.getElementById("agentFps");
   const viewerFps = document.getElementById("viewerFps");
+  const statusEl = document.getElementById("streamStatus");
   ws.binaryType = "arraybuffer";
 
   let activeClientId = clientId;
   let renderCount = 0;
   let renderWindowStart = performance.now();
+  let lastFrameAt = 0;
+  let desiredStreaming = false;
+  let streamState = "connecting";
+  let frameWatchTimer = null;
+  let offlineTimer = null;
+  setStreamState("connecting", "Connecting");
 
   function updateFpsDisplay(agentValue) {
     if (agentValue !== undefined && agentValue !== null && agentFps) {
@@ -49,6 +56,121 @@ import { encodeMsgpack, decodeMsgpack } from "./msgpack-helpers.js";
       viewerFps.textContent = String(fps);
       renderCount = 0;
       renderWindowStart = now;
+    }
+  }
+
+  function setStreamState(state, text) {
+    streamState = state;
+    if (statusEl) {
+      const icons = {
+        connecting: '<i class="fa-solid fa-circle-notch fa-spin"></i>',
+        starting: '<i class="fa-solid fa-circle-notch fa-spin"></i>',
+        stopping: '<i class="fa-solid fa-circle-notch fa-spin"></i>',
+        streaming: '<i class="fa-solid fa-circle text-emerald-400"></i>',
+        idle: '<i class="fa-solid fa-circle text-slate-400"></i>',
+        stalled: '<i class="fa-solid fa-triangle-exclamation text-amber-400"></i>',
+        offline: '<i class="fa-solid fa-plug-circle-xmark text-rose-400"></i>',
+        disconnected: '<i class="fa-solid fa-link-slash text-slate-400"></i>',
+        error: '<i class="fa-solid fa-circle-exclamation text-rose-400"></i>',
+      };
+      const label = text ||
+        (state === "streaming" ? "Streaming" :
+          state === "starting" ? "Starting" :
+            state === "stopping" ? "Stopping" :
+              state === "offline" ? "Client offline" :
+                state === "disconnected" ? "Disconnected" :
+                  state === "stalled" ? "No frames" :
+                    state === "idle" ? "Stopped" :
+                      "Connecting");
+
+      statusEl.innerHTML = `${icons[state] || icons.idle} <span>${label}</span>`;
+      const base = "inline-flex items-center gap-2 px-3 py-2 rounded-full border text-sm";
+      const styles = {
+        streaming: "bg-emerald-900/40 text-emerald-100 border-emerald-700/70",
+        starting: "bg-sky-900/40 text-sky-100 border-sky-700/70",
+        stopping: "bg-amber-900/40 text-amber-100 border-amber-700/70",
+        stalled: "bg-amber-900/40 text-amber-100 border-amber-700/70",
+        offline: "bg-rose-900/40 text-rose-100 border-rose-700/70",
+        error: "bg-rose-900/40 text-rose-100 border-rose-700/70",
+        disconnected: "bg-slate-800 text-slate-300 border-slate-700",
+        idle: "bg-slate-800 text-slate-300 border-slate-700",
+        connecting: "bg-slate-800 text-slate-300 border-slate-700",
+      };
+      statusEl.className = `${base} ${styles[state] || styles.idle}`;
+    }
+
+    if (canvasContainer) {
+      canvasContainer.dataset.streamState = state;
+    }
+
+    if (state === "idle" || state === "offline" || state === "disconnected" || state === "error") {
+      if (agentFps) agentFps.textContent = "--";
+      if (viewerFps) viewerFps.textContent = "--";
+      renderCount = 0;
+      renderWindowStart = performance.now();
+    }
+
+    updateControls();
+  }
+
+  function updateControls() {
+    const wsOpen = ws.readyState === WebSocket.OPEN;
+    const isStarting = streamState === "starting";
+    const isStreaming = streamState === "streaming";
+    const isStopping = streamState === "stopping";
+    const isBlocked = streamState === "offline" || streamState === "disconnected" || streamState === "error";
+
+    if (startBtn) {
+      startBtn.disabled = !wsOpen || isStarting || isStreaming || isStopping || isBlocked;
+    }
+    if (stopBtn) {
+      stopBtn.disabled = !wsOpen || (!isStarting && !isStreaming);
+    }
+  }
+
+  function clearOfflineTimer() {
+    if (offlineTimer) {
+      clearTimeout(offlineTimer);
+      offlineTimer = null;
+    }
+  }
+
+  function scheduleOffline(reason) {
+    clearOfflineTimer();
+    setStreamState("connecting", "Reconnecting");
+    offlineTimer = setTimeout(() => {
+      const now = performance.now();
+      if (!lastFrameAt || now - lastFrameAt > 3000) {
+        desiredStreaming = false;
+        setStreamState("offline", reason || "Client offline");
+      }
+    }, 3000);
+  }
+
+  function handleStatus(msg) {
+    if (!msg || msg.type !== "status" || !msg.status) return;
+    if (msg.status === "offline") {
+      scheduleOffline(msg.reason);
+      return;
+    }
+    if (msg.status === "connecting") {
+      clearOfflineTimer();
+      setStreamState("connecting", "Connecting");
+      return;
+    }
+    if (msg.status === "online") {
+      clearOfflineTimer();
+      if (desiredStreaming) {
+        setStreamState("starting", "Reconnecting");
+        if (displaySelect && displaySelect.value !== undefined) {
+          sendCmd("desktop_select_display", {
+            display: parseInt(displaySelect.value, 10) || 0,
+          });
+        }
+        sendCmd("desktop_start", {});
+      } else {
+        setStreamState("idle", "Stopped");
+      }
     }
   }
 
@@ -125,9 +247,14 @@ import { encodeMsgpack, decodeMsgpack } from "./msgpack-helpers.js";
         display: parseInt(displaySelect.value, 10) || 0,
       });
     }
+    desiredStreaming = true;
+    lastFrameAt = 0;
+    setStreamState("starting", "Starting stream");
     sendCmd("desktop_start", {});
   });
   stopBtn.addEventListener("click", function () {
+    desiredStreaming = false;
+    setStreamState("stopping", "Stopping stream");
     sendCmd("desktop_stop", {});
   });
   fullscreenBtn.addEventListener("click", function () {
@@ -163,6 +290,12 @@ import { encodeMsgpack, decodeMsgpack } from "./msgpack-helpers.js";
       if (buf.length >= 8 && buf[0] === 0x46 && buf[1] === 0x52 && buf[2] === 0x4d) {
         const fps = buf[5];
         const format = buf[6];
+        lastFrameAt = performance.now();
+        clearOfflineTimer();
+        if (streamState !== "streaming") {
+          desiredStreaming = true;
+          setStreamState("streaming", "Streaming");
+        }
 
         if (format === 1) {
           const jpegBytes = buf.slice(8);
@@ -248,6 +381,7 @@ import { encodeMsgpack, decodeMsgpack } from "./msgpack-helpers.js";
 
       const msg = decodeMsgpack(buf);
       if (msg && msg.type === "status" && msg.status) {
+        handleStatus(msg);
         return;
       }
       return;
@@ -255,6 +389,7 @@ import { encodeMsgpack, decodeMsgpack } from "./msgpack-helpers.js";
 
     const msg = decodeMsgpack(ev.data);
     if (msg && msg.type === "status" && msg.status) {
+      handleStatus(msg);
       return;
     }
   });
@@ -263,6 +398,8 @@ import { encodeMsgpack, decodeMsgpack } from "./msgpack-helpers.js";
     if (qualitySlider) {
       pushQuality(qualitySlider.value);
     }
+    clearOfflineTimer();
+    setStreamState("idle", "Stopped");
     fetchClientInfo().then(() => {
       if (displaySelect && displaySelect.value) {
         console.debug("rd: initial select display", displaySelect.value);
@@ -272,6 +409,32 @@ import { encodeMsgpack, decodeMsgpack } from "./msgpack-helpers.js";
       }
     });
   });
+
+  ws.addEventListener("close", function () {
+    desiredStreaming = false;
+    setStreamState("disconnected", "Disconnected");
+  });
+
+  ws.addEventListener("error", function () {
+    setStreamState("error", "WebSocket error");
+  });
+
+  if (!frameWatchTimer) {
+    frameWatchTimer = setInterval(() => {
+      const now = performance.now();
+      if (desiredStreaming) {
+        if (lastFrameAt && now - lastFrameAt > 2000) {
+          setStreamState("stalled", "No frames");
+        } else if (!lastFrameAt && streamState === "starting") {
+          setStreamState("starting", "Starting stream");
+        }
+      } else if (streamState !== "offline" && streamState !== "disconnected" && streamState !== "error") {
+        if (streamState !== "idle") {
+          setStreamState("idle", "Stopped");
+        }
+      }
+    }, 1000);
+  }
 
   canvas.addEventListener("mousemove", function (e) {
     if (!mouseCtrl.checked) return;
@@ -307,6 +470,16 @@ import { encodeMsgpack, decodeMsgpack } from "./msgpack-helpers.js";
     sendCmd("key_up", { key: e.key, code: e.code });
     e.preventDefault();
   });
+
+  function stopOnExit() {
+    if (ws.readyState === WebSocket.OPEN && desiredStreaming) {
+      desiredStreaming = false;
+      sendCmd("desktop_stop", {});
+    }
+  }
+
+  window.addEventListener("beforeunload", stopOnExit);
+  window.addEventListener("pagehide", stopOnExit);
 
   fetchClientInfo();
 })();

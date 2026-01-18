@@ -109,6 +109,9 @@ func CaptureAndSend(ctx context.Context, env *rt.Env) error {
 		fps = 1
 	}
 	frame.Header.FPS = fps
+	if ctx.Err() != nil {
+		return nil
+	}
 	sendStart := time.Now()
 	err = wire.WriteMsg(ctx, env.Conn, frame)
 	sendDur := time.Since(sendStart)
@@ -169,6 +172,9 @@ func safeDisplayCount() int {
 }
 
 func sendBlackFrame(ctx context.Context, env *rt.Env) error {
+	if ctx.Err() != nil {
+		return nil
+	}
 
 	img := image.NewRGBA(image.Rect(0, 0, 64, 64))
 

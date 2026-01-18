@@ -5,7 +5,6 @@ import (
 	"log"
 	"overlord-client/cmd/agent/capture"
 	rt "overlord-client/cmd/agent/runtime"
-	"overlord-client/cmd/agent/wire"
 	"runtime"
 	"sync"
 )
@@ -36,7 +35,10 @@ func DesktopStart(ctx context.Context, env *rt.Env) error {
 			return nil
 		default:
 			if err := capture.Now(ctx, env); err != nil {
-
+				if ctx.Err() != nil {
+					log.Printf("desktop: stopping stream")
+					return nil
+				}
 				log.Printf("desktop: capture error: %v", err)
 				continue
 			}
@@ -57,21 +59,21 @@ func DesktopSelect(ctx context.Context, env *rt.Env, display int) error {
 
 	persistDisplaySelection(display)
 	log.Printf("desktop: set selected display from %d to %d (reported monitors=%d, will capture monitor at index %d)", prev, display, maxDisplays, display)
-	return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", OK: true})
+	return nil
 }
 
 func DesktopMouseControl(ctx context.Context, env *rt.Env, enabled bool) error {
 	env.MouseControl = enabled
-	return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", OK: true})
+	return nil
 }
 
 func DesktopKeyboardControl(ctx context.Context, env *rt.Env, enabled bool) error {
 	env.KeyboardControl = enabled
-	return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", OK: true})
+	return nil
 }
 
 func DesktopCursorControl(ctx context.Context, env *rt.Env, enabled bool) error {
 	env.CursorCapture = enabled
 	capture.SetCursorCapture(enabled)
-	return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", OK: true})
+	return nil
 }

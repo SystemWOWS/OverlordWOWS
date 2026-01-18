@@ -70,6 +70,13 @@
             </button>
           </div>
           <div
+            id="streamStatus"
+            class="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-slate-800 text-slate-300 border border-slate-700 text-sm"
+          >
+            <i class="fa-solid fa-circle-notch fa-spin"></i>
+            <span>Connecting</span>
+          </div>
+          <div
             class="flex items-center gap-2 bg-slate-900/70 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300"
           >
             <span class="uppercase tracking-wide text-xs text-slate-500"
@@ -132,6 +139,14 @@
             display: flex;
             flex-direction: column;
             min-height: 100vh;
+          }
+          #canvasContainer[data-stream-state="streaming"] {
+            border-color: rgba(16, 185, 129, 0.7);
+            box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.45);
+          }
+          #canvasContainer[data-stream-state="stalled"] {
+            border-color: rgba(251, 146, 60, 0.7);
+            box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.45);
           }
           #canvasContainer:fullscreen {
             display: flex;

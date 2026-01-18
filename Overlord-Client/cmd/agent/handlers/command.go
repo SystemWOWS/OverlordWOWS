@@ -51,6 +51,16 @@ func cancelCommand(cmdID string) bool {
 	return false
 }
 
+func sendCommandResultSafe(env *runtime.Env, cmdID string, ok bool, message string) {
+	res := wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: ok}
+	if message != "" {
+		res.Message = message
+	}
+	if err := wire.WriteMsg(context.Background(), env.Conn, res); err != nil {
+		log.Printf("command_result send failed: %v", err)
+	}
+}
+
 func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]interface{}) error {
 	cmdID, _ := envelope["id"].(string)
 	action, _ := envelope["commandType"].(string)
@@ -141,7 +151,8 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 			log.Printf("desktop: start requested")
 			_ = DesktopStart(desktopCtx, env)
 		}()
-		return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: true})
+		sendCommandResultSafe(env, cmdID, true, "")
+		return nil
 	case "desktop_stop":
 
 		log.Printf("desktop: stop requested")
@@ -149,7 +160,8 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 			env.DesktopCancel()
 			env.DesktopCancel = nil
 		}
-		return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: true})
+		sendCommandResultSafe(env, cmdID, true, "")
+		return nil
 	case "desktop_select_display":
 
 		payload, _ := envelope["payload"].(map[string]interface{})
@@ -175,7 +187,8 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 		}
 		log.Printf("desktop: select display %d", disp)
 		_ = DesktopSelect(ctx, env, disp)
-		return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: true})
+		sendCommandResultSafe(env, cmdID, true, "")
+		return nil
 	case "desktop_enable_mouse":
 		payload, _ := envelope["payload"].(map[string]interface{})
 		enabled := true
@@ -186,7 +199,8 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 		}
 		log.Printf("desktop: mouse control %v", enabled)
 		_ = DesktopMouseControl(ctx, env, enabled)
-		return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: true})
+		sendCommandResultSafe(env, cmdID, true, "")
+		return nil
 	case "desktop_enable_keyboard":
 		payload, _ := envelope["payload"].(map[string]interface{})
 		enabled := true
@@ -197,7 +211,8 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 		}
 		log.Printf("desktop: keyboard control %v", enabled)
 		_ = DesktopKeyboardControl(ctx, env, enabled)
-		return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: true})
+		sendCommandResultSafe(env, cmdID, true, "")
+		return nil
 	case "desktop_enable_cursor":
 		payload, _ := envelope["payload"].(map[string]interface{})
 		enabled := false
@@ -208,7 +223,8 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 		}
 		log.Printf("desktop: cursor capture %v", enabled)
 		_ = DesktopCursorControl(ctx, env, enabled)
-		return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: true})
+		sendCommandResultSafe(env, cmdID, true, "")
+		return nil
 	case "desktop_set_quality":
 		payload, _ := envelope["payload"].(map[string]interface{})
 		quality := 90
@@ -226,10 +242,12 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 		}
 		log.Printf("desktop: set quality=%d codec=%s", quality, codec)
 		capture.SetQualityAndCodec(quality, codec)
-		return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: true})
+		sendCommandResultSafe(env, cmdID, true, "")
+		return nil
 	case "desktop_mouse_move":
 		if !env.MouseControl {
-			return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: true})
+			sendCommandResultSafe(env, cmdID, true, "")
+			return nil
 		}
 		payload, _ := envelope["payload"].(map[string]interface{})
 		x, y := int32(0), int32(0)
@@ -249,10 +267,12 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 		}
 		log.Printf("desktop: mouse move %d,%d", x, y)
 		setCursorPos(x, y)
-		return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: true})
+		sendCommandResultSafe(env, cmdID, true, "")
+		return nil
 	case "desktop_mouse_down":
 		if !env.MouseControl {
-			return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: true})
+			sendCommandResultSafe(env, cmdID, true, "")
+			return nil
 		}
 		payload, _ := envelope["payload"].(map[string]interface{})
 		btn := 0
@@ -266,10 +286,12 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 		}
 		log.Printf("desktop: mouse down %d", btn)
 		sendMouseDown(btn)
-		return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: true})
+		sendCommandResultSafe(env, cmdID, true, "")
+		return nil
 	case "desktop_mouse_up":
 		if !env.MouseControl {
-			return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: true})
+			sendCommandResultSafe(env, cmdID, true, "")
+			return nil
 		}
 		payload, _ := envelope["payload"].(map[string]interface{})
 		btn := 0
@@ -283,10 +305,12 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 		}
 		log.Printf("desktop: mouse up %d", btn)
 		sendMouseUp(btn)
-		return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: true})
+		sendCommandResultSafe(env, cmdID, true, "")
+		return nil
 	case "desktop_key_down":
 		if !env.KeyboardControl {
-			return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: true})
+			sendCommandResultSafe(env, cmdID, true, "")
+			return nil
 		}
 		payload, _ := envelope["payload"].(map[string]interface{})
 		code := ""
@@ -299,10 +323,12 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 			log.Printf("desktop: key down code=%s vk=%d", code, vk)
 			sendKeyDown(vk)
 		}
-		return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: true})
+		sendCommandResultSafe(env, cmdID, true, "")
+		return nil
 	case "desktop_key_up":
 		if !env.KeyboardControl {
-			return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: true})
+			sendCommandResultSafe(env, cmdID, true, "")
+			return nil
 		}
 		payload, _ := envelope["payload"].(map[string]interface{})
 		code := ""
@@ -315,7 +341,8 @@ func HandleCommand(ctx context.Context, env *runtime.Env, envelope map[string]in
 			log.Printf("desktop: key up code=%s vk=%d", code, vk)
 			sendKeyUp(vk)
 		}
-		return wire.WriteMsg(ctx, env.Conn, wire.CommandResult{Type: "command_result", CommandID: cmdID, OK: true})
+		sendCommandResultSafe(env, cmdID, true, "")
+		return nil
 	case "console_start":
 		sessionID, _ := envelopePayloadString(envelope, "sessionId")
 		cols, rows := envelopePayloadInts(envelope)
