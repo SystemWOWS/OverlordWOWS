@@ -18,6 +18,7 @@ db.run(`
     id TEXT PRIMARY KEY,
     hwid TEXT,
     role TEXT,
+    ip TEXT,
     host TEXT,
     os TEXT,
     arch TEXT,
@@ -36,6 +37,20 @@ try {
 try {
   db.run(`ALTER TABLE clients ADD COLUMN hwid TEXT`);
 } catch {}
+try {
+  db.run(`ALTER TABLE clients ADD COLUMN ip TEXT`);
+} catch {}
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS banned_ips (
+    ip TEXT PRIMARY KEY,
+    reason TEXT,
+    created_at INTEGER NOT NULL
+  );
+`);
+db.run(
+  `CREATE INDEX IF NOT EXISTS idx_banned_ips_created_at ON banned_ips(created_at DESC);`,
+);
 
 db.run(`
   CREATE TABLE IF NOT EXISTS builds (
@@ -75,11 +90,12 @@ export function upsertClientRow(
 ) {
   const now = partial.lastSeen ?? Date.now();
   db.run(
-    `INSERT INTO clients (id, hwid, role, host, os, arch, version, user, monitors, country, last_seen, online, ping_ms)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO clients (id, hwid, role, ip, host, os, arch, version, user, monitors, country, last_seen, online, ping_ms)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        hwid=COALESCE(excluded.hwid, clients.hwid),
        role=COALESCE(excluded.role, clients.role),
+       ip=COALESCE(excluded.ip, clients.ip),
        host=COALESCE(excluded.host, clients.host),
        os=COALESCE(excluded.os, clients.os),
        arch=COALESCE(excluded.arch, clients.arch),
@@ -94,6 +110,7 @@ export function upsertClientRow(
     partial.id,
     partial.hwid ?? partial.id,
     partial.role ?? null,
+    partial.ip ?? null,
     partial.host ?? null,
     partial.os ?? null,
     partial.arch ?? null,
@@ -126,6 +143,29 @@ export function setOnlineState(id: string, online: boolean) {
 
 export function deleteClientRow(id: string) {
   db.run(`DELETE FROM clients WHERE id=?`, id);
+}
+
+export function getClientIp(id: string): string | null {
+  const row = db.query<{ ip: string }>(`SELECT ip FROM clients WHERE id=?`).get(id);
+  return row?.ip || null;
+}
+
+export function banIp(ip: string, reason?: string) {
+  db.run(
+    `INSERT OR REPLACE INTO banned_ips (ip, reason, created_at) VALUES (?, ?, ?)`
+    , ip,
+    reason || null,
+    Date.now(),
+  );
+}
+
+export function unbanIp(ip: string) {
+  db.run(`DELETE FROM banned_ips WHERE ip=?`, ip);
+}
+
+export function isIpBanned(ip: string): boolean {
+  const row = db.query<{ ip: string }>(`SELECT ip FROM banned_ips WHERE ip=?`).get(ip);
+  return !!row?.ip;
 }
 
 export function markAllClientsOffline() {

@@ -153,6 +153,7 @@ export function createRenderer({
         <div class="flex items-center gap-3">
           <span class="text-emerald-300 font-mono text-sm inline-flex items-center gap-2"><i class="fa-solid fa-satellite-dish"></i> ${formatPing(client.pingMs)}</span>
           ${isViewer ? "" : `<button ${client.online ? "" : "disabled"} class="command-btn inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-800 bg-slate-800/70 hover:bg-slate-700 disabled:opacity-50" data-id="${escapeHtml(client.id)}"><i class="fa-solid fa-bars"></i> Commands</button>`}
+          ${isViewer ? "" : `<button class="ban-btn inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-red-800 bg-red-900/60 hover:bg-red-800 text-red-100" data-id="${escapeHtml(client.id)}"><i class="fa-solid fa-ban"></i> Ban</button>`}
         </div>
       </div>
     `;
@@ -186,6 +187,12 @@ export function createRenderer({
         e.stopPropagation();
         const rect = e.currentTarget.getBoundingClientRect();
         openMenu(client.id, rect.right, rect.bottom);
+      });
+      card.querySelector(".ban-btn")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (window.banClient) {
+          window.banClient(client.id);
+        }
       });
     }
 

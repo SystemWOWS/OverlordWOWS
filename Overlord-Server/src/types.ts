@@ -7,6 +7,7 @@ export type ClientInfo = {
   ws: any;
   lastPingSent?: number;
   hwid?: string;
+  ip?: string;
   host?: string;
   os?: string;
   arch?: string;

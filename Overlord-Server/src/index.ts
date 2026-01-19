@@ -7,7 +7,7 @@ import { fileURLToPath } from "url";
 import path from "path";
 import fs from "fs/promises";
 import AdmZip from "adm-zip";
-import { upsertClientRow, setOnlineState, listClients, markAllClientsOffline, saveBuild, getBuild, getAllBuilds, deleteExpiredBuilds, deleteBuild, saveNotificationScreenshot, getNotificationScreenshot, clearNotificationScreenshots, deleteClientRow, type NotificationScreenshotRecord } from "./db";
+import { upsertClientRow, setOnlineState, listClients, markAllClientsOffline, saveBuild, getBuild, getAllBuilds, deleteExpiredBuilds, deleteBuild, saveNotificationScreenshot, getNotificationScreenshot, clearNotificationScreenshots, deleteClientRow, getClientIp, banIp, isIpBanned, type NotificationScreenshotRecord } from "./db";
 import { handleFrame, handleHello, handlePing, handlePong } from "./wsHandlers";
 import { ClientInfo, ClientRole } from "./types";
 import { v4 as uuidv4 } from "uuid";
@@ -3297,6 +3297,47 @@ async function startServer() {
         return Response.json(result, { headers: CORS_HEADERS });
       }
 
+      const banMatch = url.pathname.match(/^\/api\/clients\/(.+)\/ban$/);
+      if (req.method === "POST" && banMatch) {
+        const user = await authenticateRequest(req);
+        if (!user) return new Response("Unauthorized", { status: 401 });
+        try {
+          requirePermission(user, "clients:control");
+        } catch (error) {
+          if (error instanceof Response) return error;
+          return new Response("Forbidden", { status: 403 });
+        }
+
+        const targetId = banMatch[1];
+        const target = clientManager.getClient(targetId);
+        const targetIp = target?.ip || getClientIp(targetId);
+        if (!targetIp) {
+          return Response.json({ error: "Client IP not found" }, { status: 404 });
+        }
+
+        banIp(targetIp, `Banned by ${user.username} for client ${targetId}`);
+
+        if (target) {
+          try {
+            target.ws.close(4003, "banned");
+          } catch {}
+          setOnlineState(targetId, false);
+        }
+
+        const ip = server.requestIP(req)?.address || "unknown";
+        logAudit({
+          timestamp: Date.now(),
+          username: user.username,
+          ip,
+          action: AuditAction.COMMAND,
+          targetClientId: targetId,
+          details: `Banned IP ${targetIp}`,
+          success: true,
+        });
+
+        return Response.json({ ok: true, ip: targetIp });
+      }
+
       // Request thumbnail generation for a specific client
       const thumbnailMatch = url.pathname.match(/^\/api\/clients\/(.+)\/thumbnail$/);
       if (req.method === "POST" && thumbnailMatch) {
@@ -3647,6 +3688,10 @@ async function startServer() {
         const clientId = wsMatch[1];
         const role = (url.searchParams.get("role") as ClientRole) || "viewer";
         const ip = server.requestIP(req)?.address || "";
+        if (ip && isIpBanned(ip)) {
+          logger.warn(`[auth] Rejected banned IP ${ip} for client ${clientId}`);
+          return new Response("Forbidden", { status: 403 });
+        }
         if (server.upgrade(req, { data: { role, clientId, ip } })) {
           return new Response();
         }
@@ -3845,12 +3890,12 @@ async function startServer() {
           return;
         }
         const id = clientId || uuidv4();
-        const info: ClientInfo = { id, role, ws, lastSeen: Date.now(), country: "" };
+        const info: ClientInfo = { id, role, ws, lastSeen: Date.now(), country: "", ip };
         clientManager.addClient(id, info);
         
         ws.data.clientId = id;
         ws.data.ip = ip;
-        upsertClientRow({ id, role, lastSeen: info.lastSeen, online: 1 });
+        upsertClientRow({ id, role, ip, lastSeen: info.lastSeen, online: 1 });
         logger.info(`[open] ${id} role=${role}`);
         const notificationConfig = getNotificationConfig();
         ws.send(

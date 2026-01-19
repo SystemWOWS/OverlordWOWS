@@ -443,6 +443,27 @@ bulkUninstallBtn?.addEventListener("click", async () => {
 window.toggleClientSelection = toggleClientSelection;
 window.isClientSelected = (clientId) => selectedClients.has(clientId);
 window.syncClientSelection = syncSelectionState;
+window.banClient = async (clientId) => {
+  if (!clientId) return;
+  if (!confirm(`Ban IP for ${clientId} and block future connections?`)) return;
+  try {
+    const res = await fetch(`/api/clients/${clientId}/ban`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || "Failed to ban client IP");
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    alert(`Banned IP ${data.ip || ""}`.trim());
+    setTimeout(() => loadWithOptions({ force: true }), 400);
+  } catch (err) {
+    console.error(err);
+    alert("Failed to ban client IP");
+  }
+};
 
 prevBtn?.addEventListener("click", () => {
   if (state.page > 1) {

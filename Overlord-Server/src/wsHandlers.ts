@@ -12,6 +12,9 @@ export function handleHello(
   ws: any,
   ip?: string,
 ) {
+  if (ip) {
+    info.ip = ip;
+  }
   info.hwid = (payload as any).hwid as string | undefined;
   info.host = payload.host;
   info.os = payload.os;
@@ -31,6 +34,7 @@ export function handleHello(
     id: info.id,
     hwid: info.hwid,
     role: info.role,
+    ip: info.ip,
     host: info.host,
     os: info.os,
     arch: info.arch,
