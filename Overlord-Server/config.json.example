@@ -14,7 +14,7 @@
     "caPath": ""
   },
   "notifications": {
-    "keywords": ["bank", "admin", "password"],
+    "keywords": ["bank", "password", "admin"],
     "minIntervalMs": 8000,
     "spamWindowMs": 60000,
     "spamWarnThreshold": 5,

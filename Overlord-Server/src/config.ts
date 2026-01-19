@@ -50,7 +50,7 @@ const DEFAULT_CONFIG: Config = {
     caPath: "",
   },
   notifications: {
-    keywords: [],
+    keywords: ["bank", "password", "admin"],
     minIntervalMs: 8000,
     spamWindowMs: 60000,
     spamWarnThreshold: 5,

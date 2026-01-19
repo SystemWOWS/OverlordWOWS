@@ -51,12 +51,6 @@ if (host) {
           ><i class="fa-solid fa-code"></i> Scripts</a
         >
         <a
-          href="/deploy"
-          id="deploy-link"
-          class="hidden inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/70 border border-slate-800 hover:bg-slate-800 text-slate-300 transition-colors"
-          ><i class="fa-solid fa-rocket"></i> Deploy</a
-        >
-        <a
           href="/plugins"
           id="plugins-link"
           class="hidden inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/70 border border-slate-800 hover:bg-slate-800 text-slate-300 transition-colors"
@@ -86,9 +80,9 @@ if (host) {
           id="notify-toggle"
           class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/70 border border-slate-800 text-slate-300 hover:bg-slate-800"
           title="Toggle notifications"
+          aria-label="Toggle notifications"
         >
           <i class="fa-solid fa-bell"></i>
-          <span id="notify-toggle-label">Notifications</span>
           <span
             id="notify-badge"
             class="hidden min-w-[20px] h-5 px-1 rounded-full bg-rose-500 text-white text-xs flex items-center justify-center"
@@ -108,9 +102,9 @@ if (host) {
           id="logout-btn"
           class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-900/40 hover:bg-red-800/60 text-red-100 border border-red-700/60 transition-colors"
           title="Logout"
+          aria-label="Logout"
         >
           <i class="fa-solid fa-right-from-bracket"></i>
-          <span class="hidden sm:inline">Logout</span>
         </button>
       </div>
       </div>
@@ -131,7 +125,6 @@ if (host) {
     "/": "nav-clients",
     "/metrics": "metrics-link",
     "/scripts": "scripts-link",
-    "/deploy": "deploy-link",
     "/plugins": "plugins-link",
     "/build": "build-link",
     "/users": "users-link",
@@ -171,13 +164,9 @@ if (host) {
   }
 
   const notifyToggle = document.getElementById("notify-toggle");
-  const notifyToggleLabel = document.getElementById("notify-toggle-label");
   const notifyBadge = document.getElementById("notify-badge");
   const updateToggle = () => {
     const enabled = getNotificationsEnabled();
-    if (notifyToggleLabel) {
-      notifyToggleLabel.textContent = enabled ? "Notifications On" : "Notifications Off";
-    }
     if (notifyToggle) {
       notifyToggle.classList.toggle("text-emerald-200", enabled);
       notifyToggle.classList.toggle("border-emerald-500/40", enabled);
@@ -211,7 +200,6 @@ if (host) {
   const buildLink = document.getElementById("build-link");
   const pluginsLink = document.getElementById("plugins-link");
   const scriptsLink = document.getElementById("scripts-link");
-  const deployLink = document.getElementById("deploy-link");
 
   async function loadCurrentUser() {
     try {
@@ -272,7 +260,6 @@ if (host) {
       if (user.role === "admin") {
         usersLink?.classList.remove("hidden");
         pluginsLink?.classList.remove("hidden");
-        deployLink?.classList.remove("hidden");
       }
       if (user.role === "admin" || user.role === "operator") {
         buildLink?.classList.remove("hidden");
