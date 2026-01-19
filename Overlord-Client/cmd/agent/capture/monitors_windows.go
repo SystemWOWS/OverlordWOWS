@@ -84,6 +84,8 @@ type monitorDesc struct {
 	physW    int
 	physH    int
 	scale    float64
+	posX     int
+	posY     int
 }
 
 var (
@@ -157,9 +159,12 @@ func enumerateMonitors() []monitorDesc {
 		dm.dmSize = uint16(unsafe.Sizeof(dm))
 		var physW, physH int
 		var scale float64 = 1.0
+		var posX, posY int
 		if ret, _, _ := procEnumDisplaySettingsW.Call(uintptr(unsafe.Pointer(&mi.szDevice[0])), enumCurrentSettings, uintptr(unsafe.Pointer(&dm))); ret != 0 {
 			physW = int(dm.dmPelsWidth)
 			physH = int(dm.dmPelsHeight)
+			posX = int(dm.dmPositionX)
+			posY = int(dm.dmPositionY)
 			vw := int(mi.rcMonitor.right - mi.rcMonitor.left)
 			if vw > 0 {
 				scale = float64(dm.dmPelsWidth) / float64(vw)
@@ -177,6 +182,8 @@ func enumerateMonitors() []monitorDesc {
 			physW:    physW,
 			physH:    physH,
 			scale:    scale,
+			posX:     posX,
+			posY:     posY,
 		})
 		return 1
 	})
@@ -237,6 +244,6 @@ func deviceOrdinal(name string) int {
 func logMonitors(mons []monitorDesc) {
 	log.Printf("capture: detected %d monitor(s)", len(mons))
 	for i, m := range mons {
-		log.Printf("capture: monitor %d name=%q primary=%v virtual=%v phys=%dx%d scale=%.2f", i, m.name, m.primary, m.rect, m.physW, m.physH, m.scale)
+		log.Printf("capture: monitor %d name=%q primary=%v virtual=%v phys=%dx%d scale=%.2f pos=(%d,%d)", i, m.name, m.primary, m.rect, m.physW, m.physH, m.scale, m.posX, m.posY)
 	}
 }

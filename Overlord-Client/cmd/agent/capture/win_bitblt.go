@@ -163,7 +163,7 @@ var captureDisplayFn = func(display int) (*image.RGBA, error) {
 	}
 	mon := mons[display]
 
-	bounds := clampToVirtual(mon.rect)
+	bounds := clampToVirtual(captureBounds(mon))
 	srcW := bounds.Dx()
 	srcH := bounds.Dy()
 	if srcW <= 0 || srcH <= 0 {
@@ -199,7 +199,14 @@ var captureDisplayFn = func(display int) (*image.RGBA, error) {
 	bitStart := time.Now()
 
 	if !bitBlt(hdcMem, 0, 0, int32(capW), int32(capH), hdcScreen, int32(bounds.Min.X), int32(bounds.Min.Y), SRCCOPY|CAPTUREBLT) {
-		return nil, syscall.EINVAL
+		state.reset()
+		hdcMem, hbmp, buf, stride, err = state.ensure(hdcScreen, capW, capH)
+		if err != nil {
+			return nil, err
+		}
+		if !bitBlt(hdcMem, 0, 0, int32(capW), int32(capH), hdcScreen, int32(bounds.Min.X), int32(bounds.Min.Y), SRCCOPY|CAPTUREBLT) {
+			return nil, syscall.EINVAL
+		}
 	}
 	bitDur := time.Since(bitStart)
 
@@ -219,7 +226,14 @@ var captureDisplayFn = func(display int) (*image.RGBA, error) {
 	}
 	dibStart := time.Now()
 	if got := getDIBits(hdcMem, hbmp, 0, uint32(capH), unsafe.Pointer(&buf[0]), &bmi, DIB_RGB_COLORS); got == 0 {
-		return nil, syscall.EINVAL
+		state.reset()
+		hdcMem, hbmp, buf, stride, err = state.ensure(hdcScreen, capW, capH)
+		if err != nil {
+			return nil, err
+		}
+		if got := getDIBits(hdcMem, hbmp, 0, uint32(capH), unsafe.Pointer(&buf[0]), &bmi, DIB_RGB_COLORS); got == 0 {
+			return nil, syscall.EINVAL
+		}
 	}
 	dibDur := time.Since(dibStart)
 
@@ -252,6 +266,19 @@ func clampToVirtual(bounds image.Rectangle) image.Rectangle {
 		return bounds
 	}
 	return inter
+}
+
+func captureBounds(mon monitorDesc) image.Rectangle {
+	bounds := mon.rect
+	if mon.physW > 0 && mon.physH > 0 {
+		phys := image.Rect(mon.posX, mon.posY, mon.posX+mon.physW, mon.posY+mon.physH)
+		if phys.Dx() > 0 && phys.Dy() > 0 {
+			if mon.scale != 1.0 || phys.Dx() != bounds.Dx() || phys.Dy() != bounds.Dy() {
+				bounds = phys
+			}
+		}
+	}
+	return bounds
 }
 
 func swapRB(pix []byte) {
@@ -346,6 +373,23 @@ func (s *capState) ensure(hdcScreen uintptr, w, h int) (uintptr, uintptr, []byte
 	}
 
 	return s.hdcMem, s.hbmp, s.buf, s.stride, nil
+}
+
+func (s *capState) reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.hbmp != 0 {
+		deleteObject(s.hbmp)
+		s.hbmp = 0
+	}
+	if s.hdcMem != 0 {
+		deleteDC(s.hdcMem)
+		s.hdcMem = 0
+	}
+	s.buf = nil
+	s.stride = 0
+	s.w = 0
+	s.h = 0
 }
 
 func captureScale() float64 {
