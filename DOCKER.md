@@ -79,24 +79,6 @@ docker rm overlord-server
 
 ````
 
-## Build Agent Binaries (Windows/Linux/macOS) with Docker
-
-Use the optional `agent-builder` service (Compose profile `builder`) to produce all client binaries into `./dist-clients` without installing Go locally.
-
-```bash
-# Build everything
-docker compose --profile builder run --rm agent-builder
-
-# Build a subset
-TARGETS="windows/amd64 linux/amd64" docker compose --profile builder run --rm agent-builder
-````
-
-Defaults:
-
-- `TARGETS="windows/amd64,windows/arm64,linux/amd64,linux/arm64,linux/arm/v7,darwin/arm64"`
-- Output directory: `./dist-clients` (bind-mounted into the container)
-- Flags: `GO_BUILD_FLAGS=-trimpath`, `LDFLAGS=-s -w` (override via env)
-
 ## Build Multi-Arch Server Images
 
 Use Docker Buildx to produce images that run on both amd64 and arm64 hosts (macOS Apple Silicon, most Linux servers):

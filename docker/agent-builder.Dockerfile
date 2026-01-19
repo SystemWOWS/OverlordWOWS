@@ -13,10 +13,6 @@ RUN go mod download
 # Bring in the full source
 COPY Overlord-Client/ ./
 
-# Build helper script
-COPY scripts/build-clients.sh /scripts/build-clients.sh
-RUN chmod +x /scripts/build-clients.sh
-
 # Default build matrix and output path (override via environment)
 ENV TARGETS="windows/amd64 windows/arm64 linux/amd64 linux/arm64 linux/arm/v7 darwin/arm64"
 ENV OUT_DIR=/out

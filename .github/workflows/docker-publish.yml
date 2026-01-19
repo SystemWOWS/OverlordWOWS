@@ -56,14 +56,3 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
-
-      - name: Build and push agent builder image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./docker/agent-builder.Dockerfile
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/agent-builder:${{ steps.meta.outputs.version }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max

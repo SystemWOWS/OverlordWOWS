@@ -31,21 +31,6 @@ services:
       retries: 3
       start_period: 40s
 
-  agent-builder:
-    image: ghcr.io/pulsarv2/overlord/agent-builder:latest
-    container_name: overlord-agent-builder
-    profiles: ["builder"]
-    environment:
-      TARGETS: ${TARGETS:-windows/amd64,windows/arm64,linux/amd64,linux/arm64,linux/arm/v7,darwin/arm64}
-      OUT_DIR: /out
-      LDFLAGS: "${LDFLAGS:--s -w}"
-      GO_BUILD_FLAGS: "${GO_BUILD_FLAGS:--trimpath}"
-    volumes:
-      - ./dist-clients:/out
-    restart: unless-stopped
-    networks:
-      - overlord-network
-
 networks:
   overlord-network:
     driver: bridge
