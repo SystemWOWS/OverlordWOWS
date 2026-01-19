@@ -35,7 +35,12 @@ var (
 const (
 	SM_CXSCREEN                   = 0
 	SM_CYSCREEN                   = 1
+	SM_XVIRTUALSCREEN             = 76
+	SM_YVIRTUALSCREEN             = 77
+	SM_CXVIRTUALSCREEN            = 78
+	SM_CYVIRTUALSCREEN            = 79
 	SRCCOPY                       = 0x00CC0020
+	CAPTUREBLT                    = 0x40000000
 	COLORONCOLOR                  = 3
 	BI_RGB                        = 0
 	BI_BITFIELDS                  = 3
@@ -158,27 +163,23 @@ var captureDisplayFn = func(display int) (*image.RGBA, error) {
 	}
 	mon := mons[display]
 
-	bounds := mon.rect
-	physW := mon.physW
-	physH := mon.physH
+	bounds := clampToVirtual(mon.rect)
 	srcW := bounds.Dx()
 	srcH := bounds.Dy()
-
-	if physW <= 0 || physH <= 0 {
-		physW = srcW
-		physH = srcH
-	}
 	if srcW <= 0 || srcH <= 0 {
 		return nil, syscall.EINVAL
 	}
 
 	userScale := captureScale()
-	dstW := int(float64(physW) * userScale)
-	dstH := int(float64(physH) * userScale)
+	dstW := int(float64(srcW) * userScale)
+	dstH := int(float64(srcH) * userScale)
 	if dstW <= 0 || dstH <= 0 {
-		dstW = int(float64(srcW) * userScale)
-		dstH = int(float64(srcH) * userScale)
+		dstW = srcW
+		dstH = srcH
 	}
+
+	capW := srcW
+	capH := srcH
 
 	hdcScreen := getDC(0)
 	if hdcScreen == 0 {
@@ -186,25 +187,19 @@ var captureDisplayFn = func(display int) (*image.RGBA, error) {
 	}
 	defer releaseDC(0, hdcScreen)
 
-	if dstW <= 0 || dstH <= 0 {
+	if capW <= 0 || capH <= 0 {
 		return nil, syscall.EINVAL
 	}
 
-	hdcMem, hbmp, buf, stride, err := state.ensure(hdcScreen, dstW, dstH)
+	hdcMem, hbmp, buf, stride, err := state.ensure(hdcScreen, capW, capH)
 	if err != nil {
 		return nil, err
 	}
 
 	bitStart := time.Now()
 
-	if !stretchBlt(hdcMem, 0, 0, int32(dstW), int32(dstH), hdcScreen, int32(bounds.Min.X), int32(bounds.Min.Y), int32(srcW), int32(srcH), SRCCOPY) {
-		if srcW != physW || srcH != physH {
-			if !stretchBlt(hdcMem, 0, 0, int32(dstW), int32(dstH), hdcScreen, int32(bounds.Min.X), int32(bounds.Min.Y), int32(physW), int32(physH), SRCCOPY) {
-				return nil, syscall.EINVAL
-			}
-		} else {
-			return nil, syscall.EINVAL
-		}
+	if !bitBlt(hdcMem, 0, 0, int32(capW), int32(capH), hdcScreen, int32(bounds.Min.X), int32(bounds.Min.Y), SRCCOPY|CAPTUREBLT) {
+		return nil, syscall.EINVAL
 	}
 	bitDur := time.Since(bitStart)
 
@@ -215,28 +210,48 @@ var captureDisplayFn = func(display int) (*image.RGBA, error) {
 	bmi := bitmapInfo{
 		bmiHeader: bitmapInfoHeader{
 			biSize:        uint32(unsafe.Sizeof(bitmapInfoHeader{})),
-			biWidth:       int32(dstW),
-			biHeight:      -int32(dstH),
+			biWidth:       int32(capW),
+			biHeight:      -int32(capH),
 			biPlanes:      1,
 			biBitCount:    32,
 			biCompression: BI_RGB,
 		},
 	}
 	dibStart := time.Now()
-	if got := getDIBits(hdcMem, hbmp, 0, uint32(dstH), unsafe.Pointer(&buf[0]), &bmi, DIB_RGB_COLORS); got == 0 {
+	if got := getDIBits(hdcMem, hbmp, 0, uint32(capH), unsafe.Pointer(&buf[0]), &bmi, DIB_RGB_COLORS); got == 0 {
 		return nil, syscall.EINVAL
 	}
 	dibDur := time.Since(dibStart)
 
 	convStart := time.Now()
 	swapRB(buf)
-	img := &image.RGBA{Pix: buf, Stride: stride, Rect: image.Rect(0, 0, dstW, dstH)}
+	img := &image.RGBA{Pix: buf, Stride: stride, Rect: image.Rect(0, 0, capW, capH)}
 	convDur := time.Since(convStart)
 
 	DrawCursorOnImage(img, bounds)
 
+	if dstW != capW || dstH != capH {
+		img = resizeNearest(img, dstW, dstH)
+	}
+
 	logCaptureTimings(bitDur, dibDur, convDur)
 	return img, nil
+}
+
+func clampToVirtual(bounds image.Rectangle) image.Rectangle {
+	vx := int(getSystemMetric(SM_XVIRTUALSCREEN))
+	vy := int(getSystemMetric(SM_YVIRTUALSCREEN))
+	vw := int(getSystemMetric(SM_CXVIRTUALSCREEN))
+	vh := int(getSystemMetric(SM_CYVIRTUALSCREEN))
+	if vw <= 0 || vh <= 0 {
+		return bounds
+	}
+	virtual := image.Rect(vx, vy, vx+vw, vy+vh)
+	inter := bounds.Intersect(virtual)
+	if inter.Empty() {
+		return bounds
+	}
+	return inter
 }
 
 func swapRB(pix []byte) {
