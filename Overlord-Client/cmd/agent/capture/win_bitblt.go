@@ -25,11 +25,10 @@ var (
 	procCreateDCW              = gdi32.NewProc("CreateDCW")
 	procDeleteDC               = gdi32.NewProc("DeleteDC")
 	procCreateCompatibleBitmap = gdi32.NewProc("CreateCompatibleBitmap")
+	procCreateDIBSection       = gdi32.NewProc("CreateDIBSection")
 	procDeleteObject           = gdi32.NewProc("DeleteObject")
 	procSelectObject           = gdi32.NewProc("SelectObject")
 	procBitBlt                 = gdi32.NewProc("BitBlt")
-	procStretchBlt             = gdi32.NewProc("StretchBlt")
-	procGetDIBits              = gdi32.NewProc("GetDIBits")
 	procSetProcessDpiAwareness = shcore.NewProc("SetProcessDpiAwareness")
 )
 
@@ -42,9 +41,7 @@ const (
 	SM_CYVIRTUALSCREEN            = 79
 	SRCCOPY                       = 0x00CC0020
 	CAPTUREBLT                    = 0x40000000
-	COLORONCOLOR                  = 3
 	BI_RGB                        = 0
-	BI_BITFIELDS                  = 3
 	DIB_RGB_COLORS                = 0
 	PROCESS_PER_MONITOR_DPI_AWARE = 2
 )
@@ -105,6 +102,11 @@ func createCompatibleBitmap(hdc uintptr, w, h int32) uintptr {
 	return r
 }
 
+func createDIBSection(hdc uintptr, bmi *bitmapInfo, usage uint32, bits *unsafe.Pointer) uintptr {
+	r, _, _ := procCreateDIBSection.Call(hdc, uintptr(unsafe.Pointer(bmi)), uintptr(usage), uintptr(unsafe.Pointer(bits)), 0, 0)
+	return r
+}
+
 func deleteObject(obj uintptr) {
 	_, _, _ = procDeleteObject.Call(obj)
 }
@@ -119,14 +121,11 @@ func bitBlt(hdcDest uintptr, x, y, cx, cy int32, hdcSrc uintptr, x1, y1 int32, r
 	return r != 0
 }
 
-func stretchBlt(hdcDest uintptr, x, y, cx, cy int32, hdcSrc uintptr, x1, y1, cx1, cy1 int32, rop uint32) bool {
-	r, _, _ := procStretchBlt.Call(hdcDest, uintptr(x), uintptr(y), uintptr(cx), uintptr(cy), hdcSrc, uintptr(x1), uintptr(y1), uintptr(cx1), uintptr(cy1), uintptr(rop))
-	return r != 0
-}
-
-func getDIBits(hdc uintptr, hbmp uintptr, start, lines uint32, bits unsafe.Pointer, bmi *bitmapInfo, usage uint32) int {
-	r, _, _ := procGetDIBits.Call(hdc, hbmp, uintptr(start), uintptr(lines), uintptr(bits), uintptr(unsafe.Pointer(bmi)), uintptr(usage))
-	return int(r)
+func bitBltWithFallback(hdcMem, hdcScreen uintptr, bounds image.Rectangle, w, h int) bool {
+	if bitBlt(hdcMem, 0, 0, int32(w), int32(h), hdcScreen, int32(bounds.Min.X), int32(bounds.Min.Y), SRCCOPY|CAPTUREBLT) {
+		return true
+	}
+	return bitBlt(hdcMem, 0, 0, int32(w), int32(h), hdcScreen, int32(bounds.Min.X), int32(bounds.Min.Y), SRCCOPY)
 }
 
 var dpiAwareOnce sync.Once
@@ -143,7 +142,6 @@ func setDPIAware() {
 var (
 	captureCount     atomic.Int64
 	bitbltNs         atomic.Int64
-	dibitsNs         atomic.Int64
 	convertNs        atomic.Int64
 	lastCaptureLogNs atomic.Int64
 	scaleOnce        sync.Once
@@ -196,73 +194,73 @@ var captureDisplayFn = func(display int) (*image.RGBA, error) {
 	if hdcScreen == 0 {
 		return nil, syscall.EINVAL
 	}
-	defer func() {
-		if fromCreateDC {
-			deleteDC(hdcScreen)
+	closeDC := func() {
+		if hdcScreen == 0 {
 			return
 		}
-		releaseDC(0, hdcScreen)
-	}()
+		if fromCreateDC {
+			deleteDC(hdcScreen)
+		} else {
+			releaseDC(0, hdcScreen)
+		}
+		hdcScreen = 0
+	}
+	defer closeDC()
 
 	if capW <= 0 || capH <= 0 {
 		return nil, syscall.EINVAL
 	}
 
-	hdcMem, hbmp, buf, stride, err := state.ensure(hdcScreen, capW, capH)
+	captureWithDC := func() (*image.RGBA, time.Duration, time.Duration, time.Duration, error) {
+		hdcMem, _, buf, stride, err := state.ensure(hdcScreen, capW, capH)
+		if err != nil {
+			return nil, 0, 0, 0, err
+		}
+
+		bitStart := time.Now()
+		if !bitBltWithFallback(hdcMem, hdcScreen, bounds, capW, capH) {
+			state.reset()
+			hdcMem, _, buf, stride, err = state.ensure(hdcScreen, capW, capH)
+			if err != nil {
+				return nil, 0, 0, 0, err
+			}
+			if !bitBltWithFallback(hdcMem, hdcScreen, bounds, capW, capH) {
+				return nil, 0, 0, 0, syscall.EINVAL
+			}
+		}
+		bitDur := time.Since(bitStart)
+
+		if len(buf) == 0 {
+			return nil, 0, 0, 0, syscall.EINVAL
+		}
+
+		dibDur := time.Duration(0)
+
+		convStart := time.Now()
+		swapRB(buf)
+		img := &image.RGBA{Pix: buf, Stride: stride, Rect: image.Rect(0, 0, capW, capH)}
+		convDur := time.Since(convStart)
+
+		DrawCursorOnImage(img, bounds)
+		if dstW != capW || dstH != capH {
+			img = resizeNearest(img, dstW, dstH)
+		}
+
+		return img, bitDur, dibDur, convDur, nil
+	}
+
+	img, bitDur, dibDur, convDur, err := captureWithDC()
+	if err != nil && fromCreateDC {
+		closeDC()
+		hdcScreen = getDC(0)
+		fromCreateDC = false
+		if hdcScreen == 0 {
+			return nil, err
+		}
+		img, bitDur, dibDur, convDur, err = captureWithDC()
+	}
 	if err != nil {
 		return nil, err
-	}
-
-	bitStart := time.Now()
-
-	if !bitBlt(hdcMem, 0, 0, int32(capW), int32(capH), hdcScreen, int32(bounds.Min.X), int32(bounds.Min.Y), SRCCOPY|CAPTUREBLT) {
-		state.reset()
-		hdcMem, hbmp, buf, stride, err = state.ensure(hdcScreen, capW, capH)
-		if err != nil {
-			return nil, err
-		}
-		if !bitBlt(hdcMem, 0, 0, int32(capW), int32(capH), hdcScreen, int32(bounds.Min.X), int32(bounds.Min.Y), SRCCOPY|CAPTUREBLT) {
-			return nil, syscall.EINVAL
-		}
-	}
-	bitDur := time.Since(bitStart)
-
-	if len(buf) == 0 {
-		return nil, syscall.EINVAL
-	}
-
-	bmi := bitmapInfo{
-		bmiHeader: bitmapInfoHeader{
-			biSize:        uint32(unsafe.Sizeof(bitmapInfoHeader{})),
-			biWidth:       int32(capW),
-			biHeight:      -int32(capH),
-			biPlanes:      1,
-			biBitCount:    32,
-			biCompression: BI_RGB,
-		},
-	}
-	dibStart := time.Now()
-	if got := getDIBits(hdcMem, hbmp, 0, uint32(capH), unsafe.Pointer(&buf[0]), &bmi, DIB_RGB_COLORS); got == 0 {
-		state.reset()
-		hdcMem, hbmp, buf, stride, err = state.ensure(hdcScreen, capW, capH)
-		if err != nil {
-			return nil, err
-		}
-		if got := getDIBits(hdcMem, hbmp, 0, uint32(capH), unsafe.Pointer(&buf[0]), &bmi, DIB_RGB_COLORS); got == 0 {
-			return nil, syscall.EINVAL
-		}
-	}
-	dibDur := time.Since(dibStart)
-
-	convStart := time.Now()
-	swapRB(buf)
-	img := &image.RGBA{Pix: buf, Stride: stride, Rect: image.Rect(0, 0, capW, capH)}
-	convDur := time.Since(convStart)
-
-	DrawCursorOnImage(img, bounds)
-
-	if dstW != capW || dstH != capH {
-		img = resizeNearest(img, dstW, dstH)
 	}
 
 	logCaptureTimings(bitDur, dibDur, convDur)
@@ -316,7 +314,6 @@ func swapRB(pix []byte) {
 func logCaptureTimings(bitDur, dibDur, convDur time.Duration) {
 	captureCount.Add(1)
 	bitbltNs.Add(bitDur.Nanoseconds())
-	dibitsNs.Add(dibDur.Nanoseconds())
 	convertNs.Add(convDur.Nanoseconds())
 
 	nowNs := time.Now().UnixNano()
@@ -335,9 +332,8 @@ func logCaptureTimings(bitDur, dibDur, convDur time.Duration) {
 		return float64(totalNs.Swap(0)) / 1e6 / float64(frames)
 	}
 	bitAvg := avg(bitbltNs)
-	dibAvg := avg(dibitsNs)
 	convAvg := avg(convertNs)
-	log.Printf("capture: win bitblt avg bitblt=%.2fms dibits=%.2fms convert=%.2fms frames=%d", bitAvg, dibAvg, convAvg, frames)
+	log.Printf("capture: win bitblt avg bitblt=%.2fms convert=%.2fms frames=%d", bitAvg, convAvg, frames)
 }
 
 func resizeNearest(src *image.RGBA, w, h int) *image.RGBA {
@@ -369,6 +365,7 @@ type capState struct {
 	stride int
 	w      int
 	h      int
+	bits   unsafe.Pointer
 }
 
 func (s *capState) ensure(hdcScreen uintptr, w, h int) (uintptr, uintptr, []byte, int, error) {
@@ -383,8 +380,19 @@ func (s *capState) ensure(hdcScreen uintptr, w, h int) (uintptr, uintptr, []byte
 	}
 
 	if s.w != w || s.h != h || s.hbmp == 0 {
-		newBmp := createCompatibleBitmap(hdcScreen, int32(w), int32(h))
-		if newBmp == 0 {
+		bmi := bitmapInfo{
+			bmiHeader: bitmapInfoHeader{
+				biSize:        uint32(unsafe.Sizeof(bitmapInfoHeader{})),
+				biWidth:       int32(w),
+				biHeight:      -int32(h),
+				biPlanes:      1,
+				biBitCount:    32,
+				biCompression: BI_RGB,
+			},
+		}
+		var bits unsafe.Pointer
+		newBmp := createDIBSection(s.hdcMem, &bmi, DIB_RGB_COLORS, &bits)
+		if newBmp == 0 || bits == nil {
 			return 0, 0, nil, 0, syscall.EINVAL
 		}
 		selectObject(s.hdcMem, newBmp)
@@ -395,7 +403,8 @@ func (s *capState) ensure(hdcScreen uintptr, w, h int) (uintptr, uintptr, []byte
 		s.w = w
 		s.h = h
 		s.stride = w * 4
-		s.buf = make([]byte, s.stride*h)
+		s.bits = bits
+		s.buf = unsafe.Slice((*byte)(bits), s.stride*h)
 	}
 
 	return s.hdcMem, s.hbmp, s.buf, s.stride, nil
@@ -416,6 +425,7 @@ func (s *capState) reset() {
 	s.stride = 0
 	s.w = 0
 	s.h = 0
+	s.bits = nil
 }
 
 func captureScale() float64 {
