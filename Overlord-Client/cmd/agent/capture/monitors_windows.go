@@ -95,6 +95,7 @@ var (
 )
 
 func displayCount() int {
+	setDPIAware()
 	return len(monitorList())
 }
 
@@ -124,6 +125,7 @@ func displayScale(idx int) float64 {
 }
 
 func monitorList() []monitorDesc {
+	setDPIAware()
 	if v, ok := monitorsCache.Load().([]monitorDesc); ok && len(v) > 0 && time.Since(time.Unix(0, monitorsTs)) < 30*time.Second {
 		return v
 	}

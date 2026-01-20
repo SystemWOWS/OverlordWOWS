@@ -22,6 +22,7 @@ var (
 	procReleaseDC              = user32.NewProc("ReleaseDC")
 	procGetSystemMetrics       = user32.NewProc("GetSystemMetrics")
 	procCreateCompatibleDC     = gdi32.NewProc("CreateCompatibleDC")
+	procCreateDCW              = gdi32.NewProc("CreateDCW")
 	procDeleteDC               = gdi32.NewProc("DeleteDC")
 	procCreateCompatibleBitmap = gdi32.NewProc("CreateCompatibleBitmap")
 	procDeleteObject           = gdi32.NewProc("DeleteObject")
@@ -86,6 +87,12 @@ func releaseDC(hwnd, hdc uintptr) {
 
 func createCompatibleDC(hdc uintptr) uintptr {
 	r, _, _ := procCreateCompatibleDC.Call(hdc)
+	return r
+}
+
+func createDisplayDC() uintptr {
+	displayName := syscall.StringToUTF16Ptr("DISPLAY")
+	r, _, _ := procCreateDCW.Call(uintptr(unsafe.Pointer(displayName)), 0, 0, 0)
 	return r
 }
 
@@ -163,7 +170,7 @@ var captureDisplayFn = func(display int) (*image.RGBA, error) {
 	}
 	mon := mons[display]
 
-	bounds := clampToVirtual(captureBounds(mon))
+	bounds := resolveBounds(mon)
 	srcW := bounds.Dx()
 	srcH := bounds.Dy()
 	if srcW <= 0 || srcH <= 0 {
@@ -181,11 +188,21 @@ var captureDisplayFn = func(display int) (*image.RGBA, error) {
 	capW := srcW
 	capH := srcH
 
-	hdcScreen := getDC(0)
+	hdcScreen := createDisplayDC()
+	fromCreateDC := hdcScreen != 0
+	if hdcScreen == 0 {
+		hdcScreen = getDC(0)
+	}
 	if hdcScreen == 0 {
 		return nil, syscall.EINVAL
 	}
-	defer releaseDC(0, hdcScreen)
+	defer func() {
+		if fromCreateDC {
+			deleteDC(hdcScreen)
+			return
+		}
+		releaseDC(0, hdcScreen)
+	}()
 
 	if capW <= 0 || capH <= 0 {
 		return nil, syscall.EINVAL
@@ -266,6 +283,15 @@ func clampToVirtual(bounds image.Rectangle) image.Rectangle {
 		return bounds
 	}
 	return inter
+}
+
+func resolveBounds(mon monitorDesc) image.Rectangle {
+	virtualW := int(getSystemMetric(SM_CXVIRTUALSCREEN))
+	virtualH := int(getSystemMetric(SM_CYVIRTUALSCREEN))
+	if virtualW > 0 && virtualH > 0 {
+		return clampToVirtual(mon.rect)
+	}
+	return captureBounds(mon)
 }
 
 func captureBounds(mon monitorDesc) image.Rectangle {
